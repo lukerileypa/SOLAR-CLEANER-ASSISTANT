@@ -21,6 +21,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include<stdio.h>
+#include <string.h>
+#include "main.h"
 
 /* USER CODE END Includes */
 
@@ -46,7 +49,8 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint8_t rx_index;
-uint8_t rx_data[4];
+char rx_data[6];
+const char *Command = "tttt";    // &_EN_*
 uint8_t rx_buffer[100];
 uint8_t transfer_cplt;
 uint32_t tick;
@@ -55,6 +59,9 @@ uint16_t raw;
 uint16_t send = 0;        // flag for end of sensing
 uint32_t previousMillis = 0;   // for debounce
 uint32_t currentMillis = 0;
+uint32_t pulseCount = 0;     //for digital sensor
+float digiTemp = 0.0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -62,10 +69,9 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
-void SenseThings(void);
-void Flash(void);
 /* USER CODE BEGIN PFP */
-
+void SenseThings(void);
+float getDigitalTemp(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -121,22 +127,25 @@ int main(void)
   while (1)
   {
 	  if(running==1){
-			SenseThings();
-			send = 1;
+		  getDigitalTemp();
+		  SenseThings();
+
+		  send = 1;
+
 	  }
 	  if (send==1){
 		  float Temp = (raw * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
 		  char uart_buffer[20];
-		  int intTemp = (int)Temp;
-		  sprintf(uart_buffer, "&_0%d_* C\r\n", intTemp);
+		  int intTempADC = (int)Temp;
+		  int intdigiTemp = (int)digiTemp;
+		  sprintf(uart_buffer, "&_%03d_%03d_000_*\r\n", intTempADC,intdigiTemp);
 		  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);
+
 		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, SET); // leave led on after sensing
 		  send=0;                                    //finished sending
 	  }
 
-	  HAL_UART_Receive_IT(&huart2, rx_data, 2);
-
-}
+	  HAL_UART_Receive_IT(&huart2, rx_data, 4);
 
 }
 
@@ -145,7 +154,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
   /* USER CODE END 3 */
-
+}
 
 /**
   * @brief System Clock Configuration
@@ -311,6 +320,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PA12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PB8 */
   GPIO_InitStruct.Pin = GPIO_PIN_8;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -320,6 +335,9 @@ static void MX_GPIO_Init(void)
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -331,38 +349,78 @@ static void MX_GPIO_Init(void)
 void SenseThings(void) {
 	// This function will be executed when the button is pressed
 
-		uint32_t tick = HAL_GetTick(); // set tick
-		uint32_t tick2 = HAL_GetTick();
+	uint32_t tick = HAL_GetTick(); // set tick
+	uint32_t tick2 = HAL_GetTick();
 
 
-		  // The function is running continuously until the flag is set to 0
-		while (running) {
+	  // The function is running continuously until the flag is set to 0
+	while (running) {
 
-					if((((HAL_GetTick()-tick2)>=50))) {            // led flash period
-						HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-						tick2 = HAL_GetTick();
-					}
-			// Get ADC value
-			if(((HAL_GetTick()-tick)>100)) {
-				HAL_ADC_Start(&hadc1);
-				HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-				raw = HAL_ADC_GetValue(&hadc1);
-			} else if((HAL_GetTick()-tick)>=500) {                   //sampling period for sensor
-				tick = HAL_GetTick();
-			}
+		if((((HAL_GetTick()-tick2)>=50))) {            // led flash period
+			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+			tick2 = HAL_GetTick();
 		}
+														// Get ADC value
+		if(((HAL_GetTick()-tick)>50)) {
+			HAL_ADC_Start(&hadc1);
+			HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+			raw = HAL_ADC_GetValue(&hadc1);
+		}
+		if((HAL_GetTick()-tick)>=500) {                 //sampling period for sensor
+			tick = HAL_GetTick();
+		}
+		HAL_UART_Receive_IT(&huart2, rx_data, 4);
+	}
 
 }
 
 
 
+float getDigitalTemp(void){
+	while (running) {
+		pulseCount = 0;        //reset
+		unsigned long conversionStartTime = HAL_GetTick();
+		while(HAL_GetTick()-conversionStartTime < 10){
+			//reset if any pulse detected during this period
+			if(pulseCount > 0){
+				pulseCount=0;
+				conversionStartTime = HAL_GetTick();
+			}
+		}
+
+		//wait for first pulse
+		conversionStartTime= HAL_GetTick();
+		while(HAL_GetTick()-conversionStartTime < 150){
+			if(pulseCount > 0) break;
+		}
+		if(pulseCount == 0) return 1000;        //Fail
+
+		//main pulse counting period
+		conversionStartTime = HAL_GetTick();
+		unsigned int oldpulseCount = pulseCount;
+		unsigned long pulseTime = HAL_GetTick();
+		while(HAL_GetTick()-conversionStartTime < 60 ){
+			if(pulseCount != oldpulseCount){
+				oldpulseCount = pulseCount;
+				pulseTime = HAL_GetTick();
+			} else if (HAL_GetTick()-pulseTime > 5){
+				break;
+			}
+		}
+		if(pulseCount < 5) return 1000;    // Fail
+
+		//concert pulse count to temperature
+		digiTemp = 256.000 * pulseCount / 4096.000 - 50;
+return digiTemp;
+	}
+}
 
 
-/* USER CODE END 4 */
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	previousMillis = currentMillis;
 	currentMillis = HAL_GetTick();
-	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>40)){
-		//HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=20)){  // pb8 button
 		if(running==0){
 			running=1;
 		}
@@ -371,17 +429,60 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		}
 		previousMillis = currentMillis;
 	}
+
+	if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
+		pulseCount++;
+	}
+
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){            // uart receive command
 	UNUSED(huart);
-	if (rx_data == "tt"){        //&_EN_*
-		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+	if (strcmp(rx_data,Command) == 0){        //&_EN_*
 		if(running==0){
-				running=1;
-			}
-			else{
-				running=0;
-			}
-	}//HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+			running=1;
+		}
+		else{
+			running=0;
+		}
+		memset(rx_data, 0, sizeof(rx_data));
+	}
+
+	}
+
+
+
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  __disable_irq();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
 }
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
