@@ -49,8 +49,8 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint8_t rx_index;
-char rx_data[6];
-const char *Command = "tttt";    // &_EN_*
+char rx_data[7];
+const char *Command = "&_EN_*";    // &_EN_*
 uint8_t rx_buffer[100];
 uint8_t transfer_cplt;
 uint32_t tick;
@@ -61,6 +61,9 @@ uint32_t previousMillis = 0;   // for debounce
 uint32_t currentMillis = 0;
 uint32_t pulseCount = 0;     //for digital sensor
 float digiTemp = 0.0;
+static volatile uint32_t lastDebounceTime = 0;
+static uint8_t lastButtonState = 0; // Assuming 0 is released, 1 is pressed
+int DEBOUNCE_DELAY = 100; // Debounce delay in milliseconds
 
 /* USER CODE END PV */
 
@@ -117,7 +120,7 @@ int main(void)
   HAL_UART_Transmit(&huart2,studnum,8,100);
   HAL_UART_Transmit(&huart2,"_*",2,100);
   HAL_UART_Transmit(&huart2,"\n\r",1,100);
-
+  HAL_UART_Receive_IT(&huart2, rx_data, 6);
 
 
   /* USER CODE END 2 */
@@ -134,7 +137,7 @@ int main(void)
 
 	  }
 	  if (send==1){
-		  float Temp = (raw * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
+		  float Temp = (raw * 3.3) / 4096.0 * 100.0 - 274;    // Convert to string and print
 		  char uart_buffer[20];
 		  int intTempADC = (int)Temp;
 		  int intdigiTemp = (int)digiTemp;
@@ -145,7 +148,7 @@ int main(void)
 		  send=0;                                    //finished sending
 	  }
 
-	  HAL_UART_Receive_IT(&huart2, rx_data, 4);
+
 
 }
 
@@ -369,7 +372,7 @@ void SenseThings(void) {
 		if((HAL_GetTick()-tick)>=500) {                 //sampling period for sensor
 			tick = HAL_GetTick();
 		}
-		HAL_UART_Receive_IT(&huart2, rx_data, 4);
+		HAL_UART_Receive_IT(&huart2, rx_data, 6);
 	}
 
 }
@@ -411,13 +414,15 @@ float getDigitalTemp(void){
 
 		//concert pulse count to temperature
 		digiTemp = 256.000 * pulseCount / 4096.000 - 50;
-return digiTemp;
+		return digiTemp;
 	}
 }
 
 
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+// Read the current button state
+
 	previousMillis = currentMillis;
 	currentMillis = HAL_GetTick();
 	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=20)){  // pb8 button
@@ -436,7 +441,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 }
 
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){            // uart receive command
+
+
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive command
 	UNUSED(huart);
 	if (strcmp(rx_data,Command) == 0){        //&_EN_*
 		if(running==0){
