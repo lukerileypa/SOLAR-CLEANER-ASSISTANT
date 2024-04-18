@@ -398,8 +398,6 @@ void SenseThings(void) {
 
 	uint32_t tick = HAL_GetTick(); // set tick
 
-
-
 	  // The function is running continuously until the flag is set to 0
 	while (running) {
 
@@ -433,11 +431,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 // Read the current button state
 	previousMillis = currentMillis;
 		currentMillis = HAL_GetTick();
-		if((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=100)){  // pb8 button
-			if(running==0){
+		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=100)){  // pb8 button
+			if((running==0)&&(allow_press==true)){
 				running=1;
 			}
-			else{
+			if((running==1)&&(allow_press==true)){
 				running=0;
 			}
 			previousMillis = currentMillis;
