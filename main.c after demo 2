@@ -139,6 +139,7 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+
 	  debounce_on_lift(DEBOUNCE_DELAY);
 	  HAL_UART_Receive_IT(&huart2, rx_data, 2);
 	  if(running==1){
@@ -364,17 +365,17 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : PB10 PB8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PA12 */
   GPIO_InitStruct.Pin = GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PB8 */
-  GPIO_InitStruct.Pin = GPIO_PIN_8;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
@@ -431,11 +432,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 // Read the current button state
 	previousMillis = currentMillis;
 		currentMillis = HAL_GetTick();
-		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=100)){  // pb8 button
-			if((running==0)&&(allow_press==true)){
+		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=100)&&(allow_press)){  // pb8 button
+			if((running==0)){
 				running=1;
 			}
-			if((running==1)&&(allow_press==true)){
+			else{
 				running=0;
 			}
 			previousMillis = currentMillis;
