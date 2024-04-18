@@ -26,7 +26,20 @@
 #include "main.h"
 #include <stdbool.h> // For `true` and `false` macros
 #include <stdint.h>  // For standard integer types
+#include "stm32f4xx.h"
 
+#define RS_Pin GPIO_PIN_4
+#define RS_GPIO_Port GPIOC
+#define EN_Pin GPIO_PIN_14
+#define EN_GPIO_Port GPIOB
+#define D4_Pin GPIO_PIN_15
+#define D4_GPIO_Port GPIOB
+#define D5_Pin GPIO_PIN_1
+#define D5_GPIO_Port GPIOB
+#define D6_Pin GPIO_PIN_2
+#define D6_GPIO_Port GPIOB
+#define D7_Pin GPIO_PIN_12
+#define D7_GPIO_Port GPIOB
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,8 +65,8 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint8_t rx_index;
-char rx_data[3];
-const char* Command = "11\n";    // &_EN_*
+char rx_data[2];
+const char* Command = "11";    // &_EN_*
 uint8_t rx_buffer[100];
 uint8_t transfer_cplt;
 uint32_t tick;
@@ -81,9 +94,74 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
-void SenseThings(void);
-float getDigitalTemp(void);
-bool debounce_on_lift(uint16_t debounce_duration);
+void SenseThings(void);                                 // running led function
+bool debounce_on_lift(uint16_t debounce_duration);      // debounce func
+void LCD_SendCommand(uint8_t command);                  // lcd funs folllow
+void LCD_SendData(uint8_t data);
+void LCD_Clear(void);
+void LCD_WriteString(char* str);
+
+void LCD_Init(void) {
+  LCD_SendCommand(0x02);
+  LCD_SendCommand(0x28);
+  LCD_SendCommand(0x0C);
+  LCD_SendCommand(0x06);
+}
+
+
+void LCD_SendCommand(uint8_t command) {
+  HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, (command >> 4) & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (command >> 5) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (command >> 6) & 1);
+  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (command >> 7) & 1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, command & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (command >> 1) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (command >> 2) & 1);
+  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (command >> 3) & 1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+  HAL_Delay(1);
+}
+
+void LCD_SendData(uint8_t data) {
+  HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, (data >> 4) & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (data >> 5) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (data >> 6) & 1);
+  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data >> 7) & 1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, data & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (data >> 1) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (data >> 2) & 1);
+ HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data >> 3) & 1);
+  //HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data & 1) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+HAL_Delay(1);
+HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+HAL_Delay(1);
+}
+
+void LCD_Clear(void) {
+LCD_SendCommand(0x01);
+HAL_Delay(2);
+}
+
+void LCD_WriteString(char* str) {
+while(*str) {
+	LCD_SendData(*str++);
+	HAL_Delay(1);
+	}
+}
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -132,7 +210,29 @@ int main(void)
   HAL_UART_Transmit(&huart2,"\n\r",1,100);
   HAL_UART_Receive_IT(&huart2, rx_data, 2);
 
+  //LCD//
+  /* Enable clock for GPIOB and GPIOC */
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
+  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
+/* Initialize GPIOB pins */
+GPIO_InitTypeDef GPIO_InitStruct = {0};
+GPIO_InitStruct.Pin = EN_Pin | D4_Pin | D5_Pin | D6_Pin | D7_Pin;
+GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+GPIO_InitStruct.Pull = GPIO_NOPULL;
+GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+/* Initialize GPIOC pin */
+GPIO_InitStruct.Pin = RS_Pin; // RS_Pin on GPIOC
+HAL_GPIO_Init(GPIOC, &GPIO_InitStruct); // Initialize pin on GPIOC
+
+LCD_Init();
+
+LCD_Clear();
+LCD_WriteString("Hello World!");
+
+ //LCD end//
+//running=0;
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -144,10 +244,10 @@ int main(void)
 	  HAL_UART_Receive_IT(&huart2, rx_data, 2);
 	  if(running==1){
 
-		  SenseThings();                 // just flashing led
+
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,2); //HAL_ADC_Start_DMA(hadc, pData, Length)
 		  send = 1;
-
+		  SenseThings();                 // just flashing led
 
 	  }
 	  if (send==1){
@@ -426,6 +526,8 @@ bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 	}
 	return allow_press;
 }
+
+
 
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
