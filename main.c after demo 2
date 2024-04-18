@@ -24,6 +24,8 @@
 #include<stdio.h>
 #include <string.h>
 #include "main.h"
+#include <stdbool.h> // For `true` and `false` macros
+#include <stdint.h>  // For standard integer types
 
 /* USER CODE END Includes */
 
@@ -50,14 +52,12 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint8_t rx_index;
-char rx_data[7];
-const char *Command = "&_EN_*\n";    // &_EN_*
+char rx_data[3];
+const char* Command = "11\n";    // &_EN_*
 uint8_t rx_buffer[100];
 uint8_t transfer_cplt;
 uint32_t tick;
 uint32_t running=0;       // flag to show if function running
-uint16_t raw;
-uint16_t Lux_raw;
 volatile uint16_t adcResultsDMA [2];
 volatile int adcConversionComplete = 0; // set by callback
 uint16_t send = 0;        // flag for end of sensing
@@ -67,8 +67,10 @@ uint32_t pulseCount = 0;     //for digital sensor
 uint32_t lastpulsetime=0;    // for pulse count
 float digiTemp = 0.0;
 static volatile uint32_t lastDebounceTime = 0;
-static uint8_t lastButtonState = 0; // Assuming 0 is released, 1 is pressed
 int DEBOUNCE_DELAY = 100; // Debounce delay in milliseconds
+uint32_t PB8_high = 0;
+uint32_t bounce_tick = 0;
+uint32_t allow_press = true;
 
 /* USER CODE END PV */
 
@@ -81,6 +83,7 @@ static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 void SenseThings(void);
 float getDigitalTemp(void);
+bool debounce_on_lift(uint16_t debounce_duration);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -127,7 +130,7 @@ int main(void)
   HAL_UART_Transmit(&huart2,studnum,8,100);
   HAL_UART_Transmit(&huart2,"_*",2,100);
   HAL_UART_Transmit(&huart2,"\n\r",1,100);
-  HAL_UART_Receive_IT(&huart2, rx_data, 8);
+  HAL_UART_Receive_IT(&huart2, rx_data, 2);
 
 
   /* USER CODE END 2 */
@@ -136,16 +139,19 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+	  debounce_on_lift(DEBOUNCE_DELAY);
+	  HAL_UART_Receive_IT(&huart2, rx_data, 2);
 	  if(running==1){
 
-		  SenseThings();
+		  SenseThings();                 // just flashing led
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,2); //HAL_ADC_Start_DMA(hadc, pData, Length)
 		  send = 1;
+
 
 	  }
 	  if (send==1){
 		  float Temp = (adcResultsDMA[0] * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
-		  float Lux = (adcResultsDMA[1]*30000)/4096.0;
+		  float Lux = (adcResultsDMA[1]*30000)/4096.0;                     // convert to lux
 		  char uart_buffer[20];
 		  int intTempADC = (int)Temp;
 		  int intdigiTemp = (int)digiTemp;
@@ -155,6 +161,7 @@ int main(void)
 
 		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, SET); // leave led on after sensing
 		  send=0;                                    //finished sending
+
 	  }
 
 
@@ -383,52 +390,58 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 
+
+
+
 void SenseThings(void) {
 	// This function will be executed when the button is pressed
 
 	uint32_t tick = HAL_GetTick(); // set tick
-	uint32_t tick2 = HAL_GetTick();
+
 
 
 	  // The function is running continuously until the flag is set to 0
 	while (running) {
 
-		if((((HAL_GetTick()-tick2)>=50))) {            // led flash period
+		if((((HAL_GetTick()-tick)>=50))) {            // led flash period
 			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-			tick2 = HAL_GetTick();
-		}
-														// Get ADC value
-		//if(((HAL_GetTick()-tick)>50)) {
-		//	HAL_ADC_Start(&hadc1);
-		//	HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
-		//	raw = HAL_ADC_GetValue(&hadc1);
-		//}
-
-		if((HAL_GetTick()-tick)>=500) {                 //sampling period for sensor
 			tick = HAL_GetTick();
 		}
-		HAL_UART_Receive_IT(&huart2, rx_data, 8);
+
+		HAL_UART_Receive_IT(&huart2, rx_data, 2);
+		debounce_on_lift(DEBOUNCE_DELAY);
 	}
 
 }
 
-
+bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
+	PB8_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_8);
+	if(!PB8_high){
+		bounce_tick = HAL_GetTick();
+	}
+	if(HAL_GetTick() - bounce_tick > DEBOUNCE_DELAY){
+		allow_press = true;                                  //debounce on uppress
+	}
+	else{
+		allow_press = false;
+	}
+	return allow_press;
+}
 
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 // Read the current button state
-
-
-	currentMillis = HAL_GetTick();
-	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>50)){  // pb8 button
-		if(running==0){
-			running=1;
+	previousMillis = currentMillis;
+		currentMillis = HAL_GetTick();
+		if((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=100)){  // pb8 button
+			if(running==0){
+				running=1;
+			}
+			else{
+				running=0;
+			}
+			previousMillis = currentMillis;
 		}
-		else{
-			running=0;
-		}
-		previousMillis = currentMillis;
-	}
 
 	if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
 		pulseCount++;
@@ -445,6 +458,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive command
 	UNUSED(huart);
+	//rx_buffer[sizeof(rx_buffer) - 1] = '\0';
 	if (strcmp(rx_data,Command) == 0){        //&_EN_*
 		if(running==0){
 			running=1;
@@ -454,6 +468,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive 
 		}
 		memset(rx_data, 0, sizeof(rx_data));
 	}
+	//memset(rx_data, 0, sizeof(rx_data));
 
 	}
 
