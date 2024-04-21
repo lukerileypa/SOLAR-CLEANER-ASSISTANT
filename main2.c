@@ -64,10 +64,10 @@ DMA_HandleTypeDef hdma_adc1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint8_t rx_index;
-char rx_data[2];
-const char* Command = "11";    // &_EN_*
-uint8_t rx_buffer[100];
+
+char rx_data[7] = {0};
+const char* EN_Command = "&_EN_*";    // &_EN_*\n
+const char* SP_Command = "&_SP_*";    // &_SP_*\n
 uint8_t transfer_cplt;
 uint32_t tick;
 uint32_t running=0;       // flag to show if function running
@@ -208,7 +208,8 @@ int main(void)
   HAL_UART_Transmit(&huart2,studnum,8,100);
   HAL_UART_Transmit(&huart2,"_*",2,100);
   HAL_UART_Transmit(&huart2,"\n\r",1,100);
-  HAL_UART_Receive_IT(&huart2, rx_data, 2);
+
+	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data) - 1);
 
   //LCD//
   /* Enable clock for GPIOB and GPIOC */
@@ -241,31 +242,31 @@ LCD_WriteString("Hello World!");
   {
 
 	  debounce_on_lift(DEBOUNCE_DELAY);
-	  HAL_UART_Receive_IT(&huart2, rx_data, 2);
-	  if(running==1){
+
+	  if(running==1){         // do the EN stuff
 
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,2); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  send = 1;
-		  SenseThings();                 // just flashing led
-
-	  }
-	  if (send==1){
+		  SenseThings();                                                   // just flashing led
 		  float Temp = (adcResultsDMA[0] * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
 		  float Lux = (adcResultsDMA[1]*30000)/4096.0;                     // convert to lux
 		  char uart_buffer[20];
-		  int intTempADC = (int)Temp;
+		  int intTempADC = (int)Temp;                                    // change all to integers
 		  int intdigiTemp = (int)digiTemp;
 		  int intLux = (int)Lux;
 		  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
-		  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);
+		  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
 
 		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, SET); // leave led on after sensing
-		  send=0;                                    //finished sending
+
+			memset(rx_data, 0, sizeof(rx_data));
 
 	  }
 
+	  if(running==2){              // do the SP stuff
 
+		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+	  }
 
 }
 
@@ -452,6 +453,13 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, LD2_Pin|GPIO_PIN_6, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_12|GPIO_PIN_13
+                          |GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
@@ -464,6 +472,22 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB1 PB2 PB12 PB13
+                           PB14 PB15 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_12|GPIO_PIN_13
+                          |GPIO_PIN_14|GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PB10 PB8 */
   GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_8;
@@ -507,7 +531,7 @@ void SenseThings(void) {
 			tick = HAL_GetTick();
 		}
 
-		HAL_UART_Receive_IT(&huart2, rx_data, 2);
+
 		debounce_on_lift(DEBOUNCE_DELAY);
 	}
 
@@ -559,17 +583,32 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive command
 	UNUSED(huart);
-	//rx_buffer[sizeof(rx_buffer) - 1] = '\0';
-	if (strcmp(rx_data,Command) == 0){        //&_EN_*
-		if(running==0){
-			running=1;
+
+	rx_data[sizeof(rx_data) - 1] = '\0';
+//	rx_data[sizeof(rx_data) - 2] = '\0';
+	rx_data[sizeof(rx_data) - 0] = '\0';
+	if (strcmp(rx_data,EN_Command) == 0){        //&_EN_*
+				if(running==0){
+					running=1;
+				}
+				else{
+					running=0;
+
+				}
 		}
-		else{
-			running=0;
-		}
-		memset(rx_data, 0, sizeof(rx_data));
+
+
+	if (strcmp(rx_data,SP_Command) == 0){        //&_EN_*
+			if(running==0){
+				running=2;
+			}
+			else{
+				running=0;
+			}
 	}
-	//memset(rx_data, 0, sizeof(rx_data));
+
+	memset(rx_data, 0, sizeof(rx_data));
+	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data) - 1);
 
 	}
 
