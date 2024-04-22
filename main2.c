@@ -93,6 +93,9 @@ int intTempADC = 0;                                    // change all to integers
 int intdigiTemp = 0;
 int intLux = 0;
 bool lcdUpdated = 0;
+int EN_dataSent = 0;  // Flag to indicate that data has been sent
+int SP_dataSent = 0;  // Flag to indicate that data has been sent
+static uint32_t tick_LED = 0;
 
 /* USER CODE END PV */
 
@@ -103,7 +106,6 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
-void SenseThings(void);                                 // running led function
 bool debounce_on_lift(uint16_t debounce_duration);      // debounce func
 void LCD_SendCommand(uint8_t command);                  // lcd funs folllow
 void LCD_SendData(uint8_t data);
@@ -168,6 +170,7 @@ LCD_WriteString("Hello");
 
  //LCD end//
 //running=0;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -179,30 +182,51 @@ LCD_WriteString("Hello");
 
   if(running==1){         // do the EN stuff
 
+	  if((((HAL_GetTick()-tick_LED)>=50))) {            // led flash period
+			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+			tick_LED = HAL_GetTick();
+			}
 
 	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,2); //HAL_ADC_Start_DMA(hadc, pData, Length)
-	  SenseThings();                                                   // just flashing led
 	  Temp = (adcResultsDMA[0] * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
 	  Lux = (adcResultsDMA[1]*30000)/4096.0;                     // convert to lux
-	  char uart_buffer[20];
 	  intTempADC = (int)Temp;                                    // change all to integers
 	  intdigiTemp = (int)digiTemp;
 	  intLux = (int)Lux;
+	  EN_dataSent = 1;  // Set the flag because data has been sent
+	  debounce_on_lift(DEBOUNCE_DELAY);
+
+  }
+  if((running==0)&&(EN_dataSent==1)){                  // send after sensing period
+	  char uart_buffer[20];
 	  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
 	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
 
 	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, SET); // leave led on after sensing
 	  memset(rx_data, 0, sizeof(rx_data));
-
+	  debounce_on_lift(DEBOUNCE_DELAY);
+	  EN_dataSent = 0;  // Clear the flag when running is not zero
   }
 
-  while(running==2){              // do the SP stuff
-	  tick = HAL_GetTick();
-	  if ((HAL_GetTick()-tick)>50){
+
+  if(running==2){              // do the SP stuff
+	  if ((HAL_GetTick()-tick_LED)>50){
 		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		  tick = HAL_GetTick();
+		  tick_LED = HAL_GetTick();
 	  }
+	  debounce_on_lift(DEBOUNCE_DELAY);
+	  SP_dataSent==1;
   }
+  if((running==0)&&(SP_dataSent==1)){                  // send SP after sensing period
+ 	  char uart_buffer[20];
+ 	  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
+ 	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
+
+ 	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET); // leave led on after sensing
+ 	  memset(rx_data, 0, sizeof(rx_data));
+ 	  debounce_on_lift(DEBOUNCE_DELAY);
+ 	  SP_dataSent = 0;  // Clear the flag when running is not zero
+   }
 
   if((display_mode==1)&&(!lcdUpdated)){
 	  char line1[20];
@@ -230,14 +254,15 @@ LCD_WriteString("Hello");
 //  if((display_mode==3)&&(!lcdUpdated)){                  // date n time
 //	  char line1[20];
 //	  char line2[20];
-//	  sprintf(line1, "Date:%03d Time:%03d", intTempADC,intdigiTemp);
-//	  sprintf(line2, "%03d", intLux);
+//	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);     // Temp etc
+//	  sprintf(line2, "Lux:%03d", intLux);
+//
 //	  LCD_Clear();
 //	  LCD_WriteString(line1);
 //	  LCD_SetCursorSecondLine();
 //	  LCD_WriteString(line2);
 //	  lcdUpdated = true;  // Set the fag to prevent future updates
-//  }
+
 //  if((display_mode==4)&&(!lcdUpdated)){
 //	  display_tick=HAL_GetTick();
 //			if(display_tick>10000){
@@ -250,15 +275,16 @@ LCD_WriteString("Hello");
 //			disp_mode_II==3;
 //		  }
 //  }
-
+  }
 }
+
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
   /* USER CODE END 3 */
-}
+
 
 /**
   * @brief System Clock Configuration
@@ -563,26 +589,6 @@ void LCD_SetCursorSecondLine(void) {
 }
 
 
-
-void SenseThings(void) {
-	// This function will be executed when the button is pressed
-
-	uint32_t tick = HAL_GetTick(); // set tick
-
-	  // The function is running continuously until the flag is set to 0
-	while (running) {
-
-		if((((HAL_GetTick()-tick)>=50))) {            // led flash period
-			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-			tick = HAL_GetTick();
-		}
-
-
-		debounce_on_lift(DEBOUNCE_DELAY);
-	}
-
-}
-
 bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 	PB8_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_8);
 	PB9_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_9);
@@ -628,11 +634,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	}
 
 
-	if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)){  // pb8 button
+	if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
 		if((running==0)){
 			running=2;
 		}
-		if(running==2){
+		else{
 			running=0;
 		}
 		previousMillis = currentMillis;
