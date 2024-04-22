@@ -83,6 +83,7 @@ float digiTemp = 0.0;
 static volatile uint32_t lastDebounceTime = 0;
 int DEBOUNCE_DELAY = 100; // Debounce delay in milliseconds
 uint32_t PB8_high = 0;
+uint32_t PB9_high = 0;
 uint32_t PB10_high = 0;
 uint32_t bounce_tick = 0;
 uint32_t allow_press = true;
@@ -195,9 +196,13 @@ LCD_WriteString("Hello");
 
   }
 
-  if(running==2){              // do the SP stuff
+  while(running==2){              // do the SP stuff
+	  tick = HAL_GetTick();
+	  if ((HAL_GetTick()-tick)>50){
+		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		  tick = HAL_GetTick();
+	  }
 
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
   }
 
   if((display_mode==1)&&(!lcdUpdated)){
@@ -223,20 +228,29 @@ LCD_WriteString("Hello");
 	  LCD_WriteString(line2);
 	  lcdUpdated = true;  // Set the flag to prevent future updates
   }
-  if((display_mode==3)&&(!lcdUpdated)){                  // date n time
-	  char line1[20];
-	  char line2[20];
-	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);
-	  sprintf(line2, "Lux:%03d", intLux);
-	  LCD_Clear();
-	  LCD_WriteString(line1);
-	  LCD_SetCursorSecondLine();
-	  LCD_WriteString(line2);
-	  lcdUpdated = true;  // Set the fag to prevent future updates
-  }
-  if((display_mode==4)&&(!lcdUpdated)){
-
-  }
+//  if((display_mode==3)&&(!lcdUpdated)){                  // date n time
+//	  char line1[20];
+//	  char line2[20];
+//	  sprintf(line1, "Date:%03d Time:%03d", intTempADC,intdigiTemp);
+//	  sprintf(line2, "%03d", intLux);
+//	  LCD_Clear();
+//	  LCD_WriteString(line1);
+//	  LCD_SetCursorSecondLine();
+//	  LCD_WriteString(line2);
+//	  lcdUpdated = true;  // Set the fag to prevent future updates
+//  }
+//  if((display_mode==4)&&(!lcdUpdated)){
+//	  display_tick=HAL_GetTick();
+//			if(display_tick>10000){
+//			disp_mode_II==1;
+//			}
+//		  if(display_tick>2000){
+//			disp_mode_II==2;
+//		  }
+//		  if(display_tick>10000){
+//			disp_mode_II==3;
+//		  }
+//  }
 
 }
 
@@ -578,8 +592,9 @@ void SenseThings(void) {
 
 bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 	PB8_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_8);
+	PB9_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_9);
 	PB10_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_10);
-	if((!PB8_high)|(!PB10_high)){
+	if((!PB8_high)|(!PB10_high)|(!PB9_high)){
 		bounce_tick = HAL_GetTick();
 	}
 	if(HAL_GetTick() - bounce_tick > DEBOUNCE_DELAY){
@@ -609,7 +624,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 				}
 			}
 
-		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=10)&&(allow_press)){  // pb8 button
+		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
 			if((running==0)){
 				running=1;
 			}
@@ -619,14 +634,24 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 			previousMillis = currentMillis;
 		}
 
-		if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=10))&&(allow_press)){  // pb8 button
+		if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=5))&&(allow_press)){  // pb8 button
 			lcdUpdated = 0;
 			display_mode++;
 
-				if((display_mode==5)){
+				if((display_mode==3)){    // adjust to 5 when extra modes added
 					display_mode=1;
 				}
 
+				previousMillis = currentMillis;
+			}
+
+		if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)){  // pb8 button
+				if((running==0)){
+					running=2;
+				}
+				if(running==2){
+					running=0;
+				}
 				previousMillis = currentMillis;
 			}
 
