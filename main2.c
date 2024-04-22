@@ -202,7 +202,6 @@ LCD_WriteString("Hello");
 		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		  tick = HAL_GetTick();
 	  }
-
   }
 
   if((display_mode==1)&&(!lcdUpdated)){
@@ -435,7 +434,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, LD2_Pin|GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5|GPIO_PIN_6, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(RS_Pin_GPIO_Port, RS_Pin_Pin, GPIO_PIN_RESET);
@@ -450,8 +449,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LD2_Pin PA6 */
-  GPIO_InitStruct.Pin = LD2_Pin|GPIO_PIN_6;
+  /*Configure GPIO pins : PA5 PA6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -473,8 +472,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB10 PB8 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_8;
+  /*Configure GPIO pins : PB10 PB8 PB9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_8|GPIO_PIN_9;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -484,12 +483,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
@@ -613,48 +606,47 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 // Read the current button state
 
 	previousMillis = currentMillis;
-		currentMillis = HAL_GetTick();
+	currentMillis = HAL_GetTick();
 
-		if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
-				pulseCount++;
-				if((HAL_GetTick()-lastpulsetime)>= 50){
-					digiTemp = 256.000 * pulseCount / 4096.000 - 50;
-					lastpulsetime = HAL_GetTick();
-					pulseCount=0;
-				}
-			}
-
-		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
-			if((running==0)){
-				running=1;
-			}
-			else{
-				running=0;
-			}
-			previousMillis = currentMillis;
+	if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
+		pulseCount++;
+		if((HAL_GetTick()-lastpulsetime)>= 50){
+			digiTemp = 256.000 * pulseCount / 4096.000 - 50;
+			lastpulsetime = HAL_GetTick();
+			pulseCount=0;
 		}
+	}
 
-		if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=5))&&(allow_press)){  // pb8 button
-			lcdUpdated = 0;
-			display_mode++;
+	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
+		if((running==0)){
+			running=1;
+		}
+		else{
+			running=0;
+		}
+		previousMillis = currentMillis;
+	}
 
-				if((display_mode==3)){    // adjust to 5 when extra modes added
-					display_mode=1;
-				}
 
-				previousMillis = currentMillis;
-			}
+	if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)){  // pb8 button
+		if((running==0)){
+			running=2;
+		}
+		if(running==2){
+			running=0;
+		}
+		previousMillis = currentMillis;
+	}
 
-		if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)){  // pb8 button
-				if((running==0)){
-					running=2;
-				}
-				if(running==2){
-					running=0;
-				}
-				previousMillis = currentMillis;
-			}
+	if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=5))&&(allow_press)){  // pb8 button
+		lcdUpdated = 0;
+		display_mode++;
 
+		if((display_mode==3)){    // adjust to 5 when extra modes added
+			display_mode=1;
+		}
+		previousMillis = currentMillis;
+	}
 
 
 
