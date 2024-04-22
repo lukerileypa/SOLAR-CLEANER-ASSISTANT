@@ -83,6 +83,7 @@ float digiTemp = 0.0;
 static volatile uint32_t lastDebounceTime = 0;
 int DEBOUNCE_DELAY = 100; // Debounce delay in milliseconds
 uint32_t PB8_high = 0;
+uint32_t PB10_high = 0;
 uint32_t bounce_tick = 0;
 uint32_t allow_press = true;
 float Temp = 0;
@@ -160,22 +161,6 @@ int main(void)
 
 	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data) - 1);
 
-//  //LCD//
-//  /* Enable clock for GPIOB and GPIOC */
-//  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
-//  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
-///* Initialize GPIOB pins */
-//GPIO_InitTypeDef GPIO_InitStruct = {0};
-//GPIO_InitStruct.Pin = EN_Pin | D4_Pin | D5_Pin | D6_Pin | D7_Pin;
-//GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-//GPIO_InitStruct.Pull = GPIO_NOPULL;
-//GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-//HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-//
-///* Initialize GPIOC pin */
-//GPIO_InitStruct.Pin = RS_Pin; // RS_Pin on GPIOC
-//HAL_GPIO_Init(GPIOC, &GPIO_InitStruct); // Initialize pin on GPIOC
-
 LCD_Init();
 LCD_Clear();
 LCD_WriteString("Hello");
@@ -231,7 +216,7 @@ LCD_WriteString("Hello");
 	  char line1[20];
 	  char line2[20];
 	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);     // Temp etc
-	  sprintf(line2, "Lux:%03dC", intLux);
+	  sprintf(line2, "Lux:%03d", intLux);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
@@ -242,7 +227,7 @@ LCD_WriteString("Hello");
 	  char line1[20];
 	  char line2[20];
 	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);
-	  sprintf(line2, "Lux:%03dC", intLux);
+	  sprintf(line2, "Lux:%03d", intLux);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
@@ -250,11 +235,7 @@ LCD_WriteString("Hello");
 	  lcdUpdated = true;  // Set the fag to prevent future updates
   }
   if((display_mode==4)&&(!lcdUpdated)){
-	  char SP_buffer[40];
-	  sprintf(SP_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);     // power etc
-	  LCD_Clear();
-	  LCD_WriteString(SP_buffer);
-	  lcdUpdated = true;  // Set the flag to prevent future updates
+
   }
 
 }
@@ -597,7 +578,8 @@ void SenseThings(void) {
 
 bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 	PB8_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_8);
-	if(!PB8_high){
+	PB10_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_10);
+	if((!PB8_high)|(!PB10_high)){
 		bounce_tick = HAL_GetTick();
 	}
 	if(HAL_GetTick() - bounce_tick > DEBOUNCE_DELAY){
@@ -614,9 +596,20 @@ bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 // Read the current button state
+
 	previousMillis = currentMillis;
 		currentMillis = HAL_GetTick();
-		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
+
+		if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
+				pulseCount++;
+				if((HAL_GetTick()-lastpulsetime)>= 50){
+					digiTemp = 256.000 * pulseCount / 4096.000 - 50;
+					lastpulsetime = HAL_GetTick();
+					pulseCount=0;
+				}
+			}
+
+		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=10)&&(allow_press)){  // pb8 button
 			if((running==0)){
 				running=1;
 			}
@@ -626,7 +619,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 			previousMillis = currentMillis;
 		}
 
-		if((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=10)){  // pb8 button
+		if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=10))&&(allow_press)){  // pb8 button
 			lcdUpdated = 0;
 			display_mode++;
 
@@ -638,14 +631,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 			}
 
 
-	if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
-		pulseCount++;
-		if((HAL_GetTick()-lastpulsetime)>= 50){
-			digiTemp = 256.000 * pulseCount / 4096.000 - 50;
-			lastpulsetime = HAL_GetTick();
-			pulseCount=0;
-		}
-	}
+
 
 }
 
