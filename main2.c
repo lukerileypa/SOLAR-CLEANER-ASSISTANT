@@ -71,6 +71,7 @@ const char* SP_Command = "&_SP_*";    // &_SP_*\n
 uint8_t transfer_cplt;
 uint32_t tick;
 uint32_t running=0;       // flag to show if function running
+uint32_t display_mode=1;  // display mode 1-4
 volatile uint16_t adcResultsDMA [2];
 volatile int adcConversionComplete = 0; // set by callback
 uint16_t send = 0;        // flag for end of sensing
@@ -84,6 +85,12 @@ int DEBOUNCE_DELAY = 100; // Debounce delay in milliseconds
 uint32_t PB8_high = 0;
 uint32_t bounce_tick = 0;
 uint32_t allow_press = true;
+float Temp = 0;
+float Lux = 0;
+int intTempADC = 0;                                    // change all to integers
+int intdigiTemp = 0;
+int intLux = 0;
+bool lcdUpdated = 0;
 
 /* USER CODE END PV */
 
@@ -100,67 +107,9 @@ void LCD_SendCommand(uint8_t command);                  // lcd funs folllow
 void LCD_SendData(uint8_t data);
 void LCD_Clear(void);
 void LCD_WriteString(char* str);
-
-void LCD_Init(void) {
-  LCD_SendCommand(0x02);
-  LCD_SendCommand(0x28);
-  LCD_SendCommand(0x0C);
-  LCD_SendCommand(0x06);
-}
+void LCD_SetCursorSecondLine(void);
 
 
-void LCD_SendCommand(uint8_t command) {
-  HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_RESET);
-  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, (command >> 4) & 1);
-  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (command >> 5) & 1);
-  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (command >> 6) & 1);
-  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (command >> 7) & 1);
-  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
-  HAL_Delay(1);
-  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
-  HAL_Delay(1);
-  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, command & 1);
-  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (command >> 1) & 1);
-  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (command >> 2) & 1);
-  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (command >> 3) & 1);
-  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
-  HAL_Delay(1);
-  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
-  HAL_Delay(1);
-}
-
-void LCD_SendData(uint8_t data) {
-  HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, (data >> 4) & 1);
-  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (data >> 5) & 1);
-  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (data >> 6) & 1);
-  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data >> 7) & 1);
-  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
-  HAL_Delay(1);
-  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
-  HAL_Delay(1);
-  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, data & 1);
-  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (data >> 1) & 1);
-  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (data >> 2) & 1);
- HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data >> 3) & 1);
-  //HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data & 1) ? GPIO_PIN_SET : GPIO_PIN_RESET);
-HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
-HAL_Delay(1);
-HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
-HAL_Delay(1);
-}
-
-void LCD_Clear(void) {
-LCD_SendCommand(0x01);
-HAL_Delay(2);
-}
-
-void LCD_WriteString(char* str) {
-while(*str) {
-	LCD_SendData(*str++);
-	HAL_Delay(1);
-	}
-}
 
 /* USER CODE END PFP */
 
@@ -211,26 +160,25 @@ int main(void)
 
 	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data) - 1);
 
-  //LCD//
-  /* Enable clock for GPIOB and GPIOC */
-  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
-  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
-/* Initialize GPIOB pins */
-GPIO_InitTypeDef GPIO_InitStruct = {0};
-GPIO_InitStruct.Pin = EN_Pin | D4_Pin | D5_Pin | D6_Pin | D7_Pin;
-GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-GPIO_InitStruct.Pull = GPIO_NOPULL;
-GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-/* Initialize GPIOC pin */
-GPIO_InitStruct.Pin = RS_Pin; // RS_Pin on GPIOC
-HAL_GPIO_Init(GPIOC, &GPIO_InitStruct); // Initialize pin on GPIOC
+//  //LCD//
+//  /* Enable clock for GPIOB and GPIOC */
+//  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
+//  RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
+///* Initialize GPIOB pins */
+//GPIO_InitTypeDef GPIO_InitStruct = {0};
+//GPIO_InitStruct.Pin = EN_Pin | D4_Pin | D5_Pin | D6_Pin | D7_Pin;
+//GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+//GPIO_InitStruct.Pull = GPIO_NOPULL;
+//GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+//HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+//
+///* Initialize GPIOC pin */
+//GPIO_InitStruct.Pin = RS_Pin; // RS_Pin on GPIOC
+//HAL_GPIO_Init(GPIOC, &GPIO_InitStruct); // Initialize pin on GPIOC
 
 LCD_Init();
-
 LCD_Clear();
-LCD_WriteString("Hello World!");
+LCD_WriteString("Hello");
 
  //LCD end//
 //running=0;
@@ -241,32 +189,73 @@ LCD_WriteString("Hello World!");
   while (1)
   {
 
-	  debounce_on_lift(DEBOUNCE_DELAY);
+  debounce_on_lift(DEBOUNCE_DELAY);
 
-	  if(running==1){         // do the EN stuff
+  if(running==1){         // do the EN stuff
 
 
-		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,2); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  SenseThings();                                                   // just flashing led
-		  float Temp = (adcResultsDMA[0] * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
-		  float Lux = (adcResultsDMA[1]*30000)/4096.0;                     // convert to lux
-		  char uart_buffer[20];
-		  int intTempADC = (int)Temp;                                    // change all to integers
-		  int intdigiTemp = (int)digiTemp;
-		  int intLux = (int)Lux;
-		  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
-		  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
+	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,2); //HAL_ADC_Start_DMA(hadc, pData, Length)
+	  SenseThings();                                                   // just flashing led
+	  Temp = (adcResultsDMA[0] * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
+	  Lux = (adcResultsDMA[1]*30000)/4096.0;                     // convert to lux
+	  char uart_buffer[20];
+	  intTempADC = (int)Temp;                                    // change all to integers
+	  intdigiTemp = (int)digiTemp;
+	  intLux = (int)Lux;
+	  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
+	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
 
-		  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, SET); // leave led on after sensing
+	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, SET); // leave led on after sensing
+	  memset(rx_data, 0, sizeof(rx_data));
 
-			memset(rx_data, 0, sizeof(rx_data));
+  }
 
-	  }
+  if(running==2){              // do the SP stuff
 
-	  if(running==2){              // do the SP stuff
+	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+  }
 
-		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-	  }
+  if((display_mode==1)&&(!lcdUpdated)){
+	  char line1[20];
+	  char line2[20];
+
+	  sprintf(line1, "V:%03dmV I:%03dmA ", intTempADC,intdigiTemp);    // power etc
+	  sprintf(line2, "P:%03dmW E:%03d ", intTempADC,intdigiTemp);
+	  LCD_Clear();
+	  LCD_WriteString(line1);
+	  LCD_SetCursorSecondLine();
+	  LCD_WriteString(line2);
+	  lcdUpdated = true;  // Set the flag to prevent future updates
+  }
+  if((display_mode==2)&&(!lcdUpdated)){
+	  char line1[20];
+	  char line2[20];
+	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);     // Temp etc
+	  sprintf(line2, "Lux:%03dC", intLux);
+	  LCD_Clear();
+	  LCD_WriteString(line1);
+	  LCD_SetCursorSecondLine();
+	  LCD_WriteString(line2);
+	  lcdUpdated = true;  // Set the flag to prevent future updates
+  }
+  if((display_mode==3)&&(!lcdUpdated)){                  // date n time
+	  char line1[20];
+	  char line2[20];
+	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);
+	  sprintf(line2, "Lux:%03dC", intLux);
+	  LCD_Clear();
+	  LCD_WriteString(line1);
+	  LCD_SetCursorSecondLine();
+	  LCD_WriteString(line2);
+	  lcdUpdated = true;  // Set the fag to prevent future updates
+  }
+  if((display_mode==4)&&(!lcdUpdated)){
+	  char SP_buffer[40];
+	  sprintf(SP_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);     // power etc
+	  LCD_Clear();
+	  LCD_WriteString(SP_buffer);
+	  lcdUpdated = true;  // Set the flag to prevent future updates
+  }
 
 }
 
@@ -454,10 +443,10 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOA, LD2_Pin|GPIO_PIN_6, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(RS_Pin_GPIO_Port, RS_Pin_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_12|GPIO_PIN_13
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_2|DB7_Pin|GPIO_PIN_13
                           |GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
@@ -473,16 +462,16 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PC4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  /*Configure GPIO pin : RS_Pin_Pin */
+  GPIO_InitStruct.Pin = RS_Pin_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(RS_Pin_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB1 PB2 PB12 PB13
+  /*Configure GPIO pins : PB1 PB2 DB7_Pin PB13
                            PB14 PB15 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_12|GPIO_PIN_13
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2|DB7_Pin|GPIO_PIN_13
                           |GPIO_PIN_14|GPIO_PIN_15;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -501,11 +490,17 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : PB9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 1);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
@@ -514,7 +509,70 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+void LCD_Init(void) {
+  LCD_SendCommand(0x02);
+  LCD_SendCommand(0x28);
+  LCD_SendCommand(0x0C);
+  LCD_SendCommand(0x06);
+}
 
+
+void LCD_SendCommand(uint8_t command) {
+  HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, (command >> 4) & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (command >> 5) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (command >> 6) & 1);
+  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (command >> 7) & 1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, command & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (command >> 1) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (command >> 2) & 1);
+  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (command >> 3) & 1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+  HAL_Delay(1);
+}
+
+void LCD_SendData(uint8_t data) {
+  HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, (data >> 4) & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (data >> 5) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (data >> 6) & 1);
+  HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data >> 7) & 1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+  HAL_Delay(1);
+  HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, data & 1);
+  HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (data >> 1) & 1);
+  HAL_GPIO_WritePin(D6_GPIO_Port, D6_Pin, (data >> 2) & 1);
+ HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data >> 3) & 1);
+  //HAL_GPIO_WritePin(D7_GPIO_Port, D7_Pin, (data & 1) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
+HAL_Delay(1);
+HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
+HAL_Delay(1);
+}
+
+void LCD_Clear(void) {
+LCD_SendCommand(0x01);
+HAL_Delay(2);
+}
+
+void LCD_WriteString(char* str) {
+while(*str) {
+	LCD_SendData(*str++);
+	HAL_Delay(1);
+	}
+}
+
+void LCD_SetCursorSecondLine(void) {
+    LCD_SendCommand(0xC0);  // Command to set DDRAM address to the second line first position
+}
 
 
 
@@ -558,7 +616,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 // Read the current button state
 	previousMillis = currentMillis;
 		currentMillis = HAL_GetTick();
-		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=100)&&(allow_press)){  // pb8 button
+		if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
 			if((running==0)){
 				running=1;
 			}
@@ -567,6 +625,18 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 			}
 			previousMillis = currentMillis;
 		}
+
+		if((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=10)){  // pb8 button
+			lcdUpdated = 0;
+			display_mode++;
+
+				if((display_mode==5)){
+					display_mode=1;
+				}
+
+				previousMillis = currentMillis;
+			}
+
 
 	if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
 		pulseCount++;
