@@ -97,16 +97,23 @@ float voltage_circuit_measurement = 0;
 bool lcdUpdated = 0;
 int EN_dataSent = 0;  // Flag to indicate that data has been sent
 int SP_dataSent = 0;  // Flag to indicate that data has been sent
+int tick_SP = 0;
 static uint32_t tick_LED = 0;
 
 float Voltage = 0;      // voltage circuit measurement
-int R1 = 117000;
-int R2 = 82000;
-int Rsense = 1;
-float V_2 = 0.000;    //current circuit measurement
-float Current = 0.000;
+float R1 = 117000;
+float R2 = 82000;
+float Rsense = 1;
+float V_2 = 0;    //current circuit measurement
+float Current = 0;
+float Power = 0;
 float mV = 0;
+int mVint = 0;
 float mI = 0;
+int mIint = 0;
+float mW = 0;
+int mWint = 0;
+
 
 /* USER CODE END PV */
 
@@ -222,45 +229,53 @@ LCD_WriteString("Hello");
 
 
   if(running==2){              // do the SP stuff
-	  if ((HAL_GetTick()-tick_LED)>50){
+	  if ((HAL_GetTick()-tick_LED)>50){                       // flash LED
 		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		  tick_LED = HAL_GetTick();
-	  }
-	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-	  current_circuit_measurement = adcResultsDMA[1]*3.3/4096.0;
-	  voltage_circuit_measurement = adcResultsDMA[2]*3.3/4096.0;            // both in volts
+		  }
+	  if ((HAL_GetTick()-tick_SP)>300){                  // sp measure interval
 
-	  Voltage = voltage_circuit_measurement*(R2+R1)/R2;     // the PVs voltage output accross total load
-	  V_2 = current_circuit_measurement*(R2+R1)/R2;       // should be slightly less, used to compare for current accross Rsense
+		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
+		  current_circuit_measurement = (adcResultsDMA[1]*3.300)/4096.000;
+		  voltage_circuit_measurement = (adcResultsDMA[2]*3.300)/4096.000;            // both in volts
+		  Voltage = voltage_circuit_measurement*(R2+R1)/R2;     // the PVs voltage output accross total load
+		  V_2 = current_circuit_measurement*(R2+R1)/R2;       // should be slightly less, used to compare for current accross Rsense
 
-	  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
+		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
+		  Power = Current*Voltage;                        // power
 
-	  mV = Voltage*1000;                   // change to mV
-	  mI = Current*1000;
-
-	  debounce_on_lift(DEBOUNCE_DELAY);
-	  SP_dataSent=1;
-
+		  mV = Voltage*1000;                   // change to mV
+		  mI = Current*1000;
+		  mW = Power*1000;
+		  mVint = (int)mV;                    // change to int
+		  mIint = (int)mI;
+		  mWint = (int)mW;
+		  debounce_on_lift(DEBOUNCE_DELAY);
+		  SP_dataSent=1;
+		  tick_SP = HAL_GetTick();
+		  lcdUpdated = 0;
+	  	  }
   }
 
-  if((running==0)&&(SP_dataSent==1)){                  // send SP after sensing period
+  if((SP_dataSent==1)&&(running==0)){                  // send SP after sensing period
  	  char uart_buffer[20];
- 	  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
+ 	  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", mVint,mIint,mWint);
  	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
 
  	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET); // leave led on after sensing
  	  memset(rx_data, 0, sizeof(rx_data));
  	  debounce_on_lift(DEBOUNCE_DELAY);
  	  SP_dataSent = 0;  // Clear the flag when running is not zero
- 	 lcdUpdated = 0;
+
+
    }
 
   if((display_mode==1)&&(!lcdUpdated)){
 	  char line1[20];
 	  char line2[20];
 
-	  sprintf(line1, "V:%03dmV I:%03dmA ", mV,mI);    // power etc
-	  sprintf(line2, "P:%03dmW E:%03d ", intTempADC,intdigiTemp);
+	  sprintf(line1, "V:%04dmV I:%03dmA ", mVint,mIint);    // power etc
+	  sprintf(line2, "P:%03dmW E:000 ", mWint,intdigiTemp);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
@@ -388,7 +403,7 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 2;
+  hadc1.Init.NbrOfConversion = 4;
   hadc1.Init.DMAContinuousRequests = DISABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -408,8 +423,26 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_15;
+  sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = 2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = 3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
+  */
+  sConfig.Channel = ADC_CHANNEL_15;
+  sConfig.Rank = 4;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
