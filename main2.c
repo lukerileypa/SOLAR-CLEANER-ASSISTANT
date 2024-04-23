@@ -72,7 +72,7 @@ uint8_t transfer_cplt;
 uint32_t tick;
 uint32_t running=0;       // flag to show if function running
 uint32_t display_mode=1;  // display mode 1-4
-volatile uint16_t adcResultsDMA [2];
+volatile uint16_t adcResultsDMA [4];
 volatile int adcConversionComplete = 0; // set by callback
 uint16_t send = 0;        // flag for end of sensing
 uint32_t previousMillis = 0;   // for debounce
@@ -92,10 +92,21 @@ float Lux = 0;
 int intTempADC = 0;                                    // change all to integers
 int intdigiTemp = 0;
 int intLux = 0;
+float current_circuit_measurement = 0;
+float voltage_circuit_measurement = 0;
 bool lcdUpdated = 0;
 int EN_dataSent = 0;  // Flag to indicate that data has been sent
 int SP_dataSent = 0;  // Flag to indicate that data has been sent
 static uint32_t tick_LED = 0;
+
+float Voltage = 0;      // voltage circuit measurement
+int R1 = 117000;
+int R2 = 82000;
+int Rsense = 1;
+float V_2 = 0.000;    //current circuit measurement
+float Current = 0.000;
+float mV = 0;
+float mI = 0;
 
 /* USER CODE END PV */
 
@@ -187,9 +198,9 @@ LCD_WriteString("Hello");
 			tick_LED = HAL_GetTick();
 			}
 
-	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,2); //HAL_ADC_Start_DMA(hadc, pData, Length)
+	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
 	  Temp = (adcResultsDMA[0] * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
-	  Lux = (adcResultsDMA[1]*30000)/4096.0;                     // convert to lux
+	  Lux = (adcResultsDMA[3]*30000)/4096.0;                     // convert to lux
 	  intTempADC = (int)Temp;                                    // change all to integers
 	  intdigiTemp = (int)digiTemp;
 	  intLux = (int)Lux;
@@ -206,6 +217,7 @@ LCD_WriteString("Hello");
 	  memset(rx_data, 0, sizeof(rx_data));
 	  debounce_on_lift(DEBOUNCE_DELAY);
 	  EN_dataSent = 0;  // Clear the flag when running is not zero
+	  lcdUpdated = 0;
   }
 
 
@@ -214,9 +226,23 @@ LCD_WriteString("Hello");
 		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		  tick_LED = HAL_GetTick();
 	  }
+	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
+	  current_circuit_measurement = adcResultsDMA[1]*3.3/4096.0;
+	  voltage_circuit_measurement = adcResultsDMA[2]*3.3/4096.0;            // both in volts
+
+	  Voltage = voltage_circuit_measurement*(R2+R1)/R2;     // the PVs voltage output accross total load
+	  V_2 = current_circuit_measurement*(R2+R1)/R2;       // should be slightly less, used to compare for current accross Rsense
+
+	  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
+
+	  mV = Voltage*1000;                   // change to mV
+	  mI = Current*1000;
+
 	  debounce_on_lift(DEBOUNCE_DELAY);
-	  SP_dataSent==1;
+	  SP_dataSent=1;
+
   }
+
   if((running==0)&&(SP_dataSent==1)){                  // send SP after sensing period
  	  char uart_buffer[20];
  	  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
@@ -226,13 +252,14 @@ LCD_WriteString("Hello");
  	  memset(rx_data, 0, sizeof(rx_data));
  	  debounce_on_lift(DEBOUNCE_DELAY);
  	  SP_dataSent = 0;  // Clear the flag when running is not zero
+ 	 lcdUpdated = 0;
    }
 
   if((display_mode==1)&&(!lcdUpdated)){
 	  char line1[20];
 	  char line2[20];
 
-	  sprintf(line1, "V:%03dmV I:%03dmA ", intTempADC,intdigiTemp);    // power etc
+	  sprintf(line1, "V:%03dmV I:%03dmA ", mV,mI);    // power etc
 	  sprintf(line2, "P:%03dmW E:%03d ", intTempADC,intdigiTemp);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
@@ -276,7 +303,7 @@ LCD_WriteString("Hello");
 //		  }
 //  }
   }
-}
+
 
 
     /* USER CODE END WHILE */
@@ -284,7 +311,7 @@ LCD_WriteString("Hello");
     /* USER CODE BEGIN 3 */
 
   /* USER CODE END 3 */
-
+}
 
 /**
   * @brief System Clock Configuration
@@ -514,7 +541,7 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 1);
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
