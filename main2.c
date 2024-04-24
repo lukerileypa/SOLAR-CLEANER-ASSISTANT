@@ -95,13 +95,14 @@ int intLux = 0;
 float current_circuit_measurement = 0;
 float voltage_circuit_measurement = 0;
 bool lcdUpdated = 0;
+bool begininglcdUpdated = 0;
 int EN_dataSent = 0;  // Flag to indicate that data has been sent
 int SP_dataSent = 0;  // Flag to indicate that data has been sent
 int tick_SP = 0;
 static uint32_t tick_LED = 0;
 
 float Voltage = 0;      // voltage circuit measurement
-float R1 = 117000;
+float R1 = 120000;
 float R2 = 82000;
 float Rsense = 1;
 float V_2 = 0;    //current circuit measurement
@@ -130,6 +131,7 @@ void LCD_SendData(uint8_t data);
 void LCD_Clear(void);
 void LCD_WriteString(char* str);
 void LCD_SetCursorSecondLine(void);
+void LCD_SetCursor(uint8_t row, uint8_t col);
 
 
 
@@ -184,7 +186,6 @@ int main(void)
 
 LCD_Init();
 LCD_Clear();
-LCD_WriteString("Hello");
 
  //LCD end//
 //running=0;
@@ -229,17 +230,14 @@ LCD_WriteString("Hello");
 
 
   if(running==2){              // do the SP stuff
-	  if ((HAL_GetTick()-tick_LED)>50){                       // flash LED
-		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-		  tick_LED = HAL_GetTick();
-		  }
-	  if ((HAL_GetTick()-tick_SP)>300){                  // sp measure interval
+
+	  if ((HAL_GetTick()-tick_SP)>200){                  // sp measure interval
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  current_circuit_measurement = (adcResultsDMA[1]*3.300)/4096.000;
-		  voltage_circuit_measurement = (adcResultsDMA[2]*3.300)/4096.000;            // both in volts
-		  Voltage = voltage_circuit_measurement*(R2+R1)/R2;     // the PVs voltage output accross total load
-		  V_2 = current_circuit_measurement*(R2+R1)/R2;       // should be slightly less, used to compare for current accross Rsense
+		  current_circuit_measurement = ((adcResultsDMA[1]-700)*3.300)/4096.000;
+		  voltage_circuit_measurement = ((adcResultsDMA[2]-200)*3.300)/4096.000;            // both in volts
+		  Voltage = (voltage_circuit_measurement*(R2+R1))/R2;     // the PVs voltage output accross total load
+		  V_2 = (current_circuit_measurement*(R2+R1))/R2-0.350;       // should be slightly less, used to compare for current accross Rsense
 
 		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
 		  Power = Current*Voltage;                        // power
@@ -255,10 +253,30 @@ LCD_WriteString("Hello");
 		  tick_SP = HAL_GetTick();
 		  lcdUpdated = 0;
 	  	  }
+	  if ((HAL_GetTick()-tick_LED)>100){                       // flash LED
+		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+		  tick_LED = HAL_GetTick();
+		  }
   }
 
-  if((SP_dataSent==1)&&(running==0)){                  // send SP after sensing period
- 	  char uart_buffer[20];
+  if((SP_dataSent==1)&&(running==0)){     // send SP after sensing period
+	  char uart_bufferdebug[128];  // Buffer to hold the formatted string
+	  // Format the ADC raw data into the buffer
+	      sprintf(uart_bufferdebug, "ADC Raw voltage: %u\r\n", adcResultsDMA[2]);
+	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+
+	      sprintf(uart_bufferdebug, "ADC Raw current: %u\r\n", adcResultsDMA[1]);
+	      	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+
+	      // Format the voltage measurement into the buffer
+	      sprintf(uart_bufferdebug, "Voltage Measurement: %.3f V\r\n", voltage_circuit_measurement);
+	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+
+	      // Format the calculated voltage into the buffer
+	      sprintf(uart_bufferdebug, "Calculated Voltage: %.3f V\r\n", Voltage);
+	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+
+ 	  char uart_buffer[30];
  	  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", mVint,mIint,mWint);
  	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
 
@@ -270,7 +288,7 @@ LCD_WriteString("Hello");
 
    }
 
-  if((display_mode==1)&&(!lcdUpdated)){
+  if((display_mode==1)&&(!begininglcdUpdated)){
 	  char line1[20];
 	  char line2[20];
 
@@ -280,6 +298,22 @@ LCD_WriteString("Hello");
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
 	  LCD_WriteString(line2);
+	  begininglcdUpdated = true;  // Set the flag to prevent future updates
+  }
+  if((display_mode==1)&&(!lcdUpdated)){
+	  char line1[10];
+	  char line2[10];
+	  char line3[10];
+	  sprintf(line1, "%04d", mVint);    // power etc
+	  sprintf(line2, "%03d", mIint);
+	  sprintf(line3, "%03d", mWint);
+
+	  LCD_SetCursor(0, 2);
+	  LCD_WriteString(line1);
+	  LCD_SetCursor(0, 11);
+	  LCD_WriteString(line2);
+	  LCD_SetCursor(1, 2);
+	  LCD_WriteString(line3);
 	  lcdUpdated = true;  // Set the flag to prevent future updates
   }
   if((display_mode==2)&&(!lcdUpdated)){
@@ -574,7 +608,7 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 1);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
@@ -648,6 +682,25 @@ void LCD_SetCursorSecondLine(void) {
     LCD_SendCommand(0xC0);  // Command to set DDRAM address to the second line first position
 }
 
+void LCD_SetCursor(uint8_t row, uint8_t col) {
+    uint8_t address;
+
+    // Calculate the correct DDRAM address based on the row and column
+    switch(row) {
+        case 0:
+            address = 0x00 + col;  // 0x00 is the starting address of the first row
+            break;
+        case 1:
+            address = 0x40 + col;  // 0x40 is the starting address of the second row
+            break;
+        default:
+            address = col;         // Default to first row if row number is out of bounds
+    }
+
+    // Set bit 7 to indicate DDRAM address command and send it
+    LCD_SendCommand(0x80 | address);
+}
+
 
 bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 	PB8_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_8);
@@ -706,6 +759,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 	if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=5))&&(allow_press)){  // pb8 button
 		lcdUpdated = 0;
+		begininglcdUpdated = 0;
 		display_mode++;
 
 		if((display_mode==3)){    // adjust to 5 when extra modes added
