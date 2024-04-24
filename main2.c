@@ -95,7 +95,7 @@ int intLux = 0;
 float current_circuit_measurement = 0;
 float voltage_circuit_measurement = 0;
 bool lcdUpdated = 0;
-bool begininglcdUpdated = 0;
+bool idlelcdUpdated = 0;
 int EN_dataSent = 0;  // Flag to indicate that data has been sent
 int SP_dataSent = 0;  // Flag to indicate that data has been sent
 int tick_SP = 0;
@@ -115,6 +115,12 @@ int mIint = 0;
 float mW = 0;
 int mWint = 0;
 
+int MPP = 0;   // for max power calcs
+int MaxV = 0;
+int MaxI = 0;
+
+float mV_2 = 0;
+int V_2int = 0;
 
 /* USER CODE END PV */
 
@@ -182,7 +188,7 @@ int main(void)
   HAL_UART_Transmit(&huart2,"_*",2,100);
   HAL_UART_Transmit(&huart2,"\n\r",1,100);
 
-	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data) - 1);
+	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data));
 
 LCD_Init();
 LCD_Clear();
@@ -237,21 +243,56 @@ LCD_Clear();
 		  current_circuit_measurement = ((adcResultsDMA[1]-700)*3.300)/4096.000;
 		  voltage_circuit_measurement = ((adcResultsDMA[2]-200)*3.300)/4096.000;            // both in volts
 		  Voltage = (voltage_circuit_measurement*(R2+R1))/R2;     // the PVs voltage output accross total load
-		  V_2 = (current_circuit_measurement*(R2+R1))/R2-0.350;       // should be slightly less, used to compare for current accross Rsense
+		  V_2 = (current_circuit_measurement*(R2+R1))/R2-0.350;   // should be slightly less, used to compare for current accross Rsense
+//		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
 
-		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
+		  mV_2 = V_2*1000;                   // change to mV
+		  V_2int = (int)mV_2;
+		  Current = mVint - V_2int;
+		  mI = Current;
+
 		  Power = Current*Voltage;                        // power
 
+//char uart_bufferdebug[128];  // Buffer to hold the formatted string
+//// Format the ADC raw data into the buffer
+//sprintf(uart_bufferdebug, " Voltage: %u V_2:%u Current: %u\r\n", Voltage,V_2, Current);
+//HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+
 		  mV = Voltage*1000;                   // change to mV
-		  mI = Current*1000;
+//		  mI = Current*1000;
 		  mW = Power*1000;
+
 		  mVint = (int)mV;                    // change to int
 		  mIint = (int)mI;
 		  mWint = (int)mW;
+
+
+
+  char uart_bufferdebug[128];  // Buffer to hold the formatted string
+  // Format the ADC raw data into the buffer
+  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n",  mVint, mIint);
+  HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+
+		  if(mVint >= MaxV){                 // Max power saved here
+			  MaxV = mWint;
+			  }
+		  if(mIint >= MaxI){                 // Max power saved here
+			  MaxI = mIint;
+			  }
+		  if(mWint >= MPP){                 // Max power saved here
+			  MPP = mWint;
+			  }
+
 		  debounce_on_lift(DEBOUNCE_DELAY);
 		  SP_dataSent=1;
 		  tick_SP = HAL_GetTick();
 		  lcdUpdated = 0;
+
+
+		  char uart_buffer[30];
+		  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", mVint,mIint,MPP);
+		  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
+
 	  	  }
 	  if ((HAL_GetTick()-tick_LED)>100){                       // flash LED
 		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
@@ -260,45 +301,48 @@ LCD_Clear();
   }
 
   if((SP_dataSent==1)&&(running==0)){     // send SP after sensing period
-	  char uart_bufferdebug[128];  // Buffer to hold the formatted string
-	  // Format the ADC raw data into the buffer
-	      sprintf(uart_bufferdebug, "ADC Raw voltage: %u\r\n", adcResultsDMA[2]);
-	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
-	      sprintf(uart_bufferdebug, "ADC Raw current: %u\r\n", adcResultsDMA[1]);
-	      	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+//	  char uart_bufferdebug[128];  // Buffer to hold the formatted string
+//	  	  // Format the ADC raw data into the buffer
+//	      sprintf(uart_bufferdebug, "ADC Raw voltage: %u\r\n", adcResultsDMA[2]);
+//	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+//
+//	      sprintf(uart_bufferdebug, "ADC Raw current: %u\r\n", adcResultsDMA[1]);
+//	      	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
-	      // Format the voltage measurement into the buffer
-	      sprintf(uart_bufferdebug, "Voltage Measurement: %.3f V\r\n", voltage_circuit_measurement);
-	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
-
-	      // Format the calculated voltage into the buffer
-	      sprintf(uart_bufferdebug, "Calculated Voltage: %.3f V\r\n", Voltage);
-	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+//	      // Format the voltage measurement into the buffer
+//	      sprintf(uart_bufferdebug, "Voltage Measurement: %.3f V\r\n", voltage_circuit_measurement);
+//	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+//
+//	      // Format the calculated voltage into the buffer
+//	      sprintf(uart_bufferdebug, "Calculated Voltage: %.3f V\r\n", Voltage);
+//	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
  	  char uart_buffer[30];
- 	  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", mVint,mIint,mWint);
+ 	  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", MaxV,MaxI,MPP);
  	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
 
  	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET); // leave led on after sensing
  	  memset(rx_data, 0, sizeof(rx_data));
  	  debounce_on_lift(DEBOUNCE_DELAY);
  	  SP_dataSent = 0;  // Clear the flag when running is not zero
+ 	 idlelcdUpdated = 0;
 
 
    }
 
-  if((display_mode==1)&&(!begininglcdUpdated)){
+  if((display_mode==1)&&(!idlelcdUpdated)){
 	  char line1[20];
 	  char line2[20];
 
-	  sprintf(line1, "V:%04dmV I:%03dmA ", mVint,mIint);    // power etc
-	  sprintf(line2, "P:%03dmW E:000 ", mWint,intdigiTemp);
+	  sprintf(line1, "V:%04dmV I:%03dmA ", MaxV,MaxI);    // power etc
+	  sprintf(line2, "P:%03dmW E:000 ", MPP);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
 	  LCD_WriteString(line2);
-	  begininglcdUpdated = true;  // Set the flag to prevent future updates
+	  idlelcdUpdated = true;  // Set the flag to prevent future updates
+	  MPP = 0;                    // reset Max for next measurement
   }
   if((display_mode==1)&&(!lcdUpdated)){
 	  char line1[10];
@@ -327,33 +371,8 @@ LCD_Clear();
 	  LCD_WriteString(line2);
 	  lcdUpdated = true;  // Set the flag to prevent future updates
   }
-//  if((display_mode==3)&&(!lcdUpdated)){                  // date n time
-//	  char line1[20];
-//	  char line2[20];
-//	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);     // Temp etc
-//	  sprintf(line2, "Lux:%03d", intLux);
-//
-//	  LCD_Clear();
-//	  LCD_WriteString(line1);
-//	  LCD_SetCursorSecondLine();
-//	  LCD_WriteString(line2);
-//	  lcdUpdated = true;  // Set the fag to prevent future updates
 
-//  if((display_mode==4)&&(!lcdUpdated)){
-//	  display_tick=HAL_GetTick();
-//			if(display_tick>10000){
-//			disp_mode_II==1;
-//			}
-//		  if(display_tick>2000){
-//			disp_mode_II==2;
-//		  }
-//		  if(display_tick>10000){
-//			disp_mode_II==3;
-//		  }
-//  }
   }
-
-
 
     /* USER CODE END WHILE */
 
@@ -758,8 +777,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	}
 
 	if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=5))&&(allow_press)){  // pb8 button
+
+		idlelcdUpdated = 0;
 		lcdUpdated = 0;
-		begininglcdUpdated = 0;
 		display_mode++;
 
 		if((display_mode==3)){    // adjust to 5 when extra modes added
@@ -777,10 +797,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive command
 	UNUSED(huart);
 
-	rx_data[sizeof(rx_data) - 1] = '\0';
-//	rx_data[sizeof(rx_data) - 2] = '\0';
-	rx_data[sizeof(rx_data) - 0] = '\0';
-	if (strcmp(rx_data,EN_Command) == 0){        //&_EN_*
+	if (strcmp(rx_data,"&_EN_*\n") == 0){        //&_EN_*
+		memset(rx_data, 0, sizeof(rx_data));
 				if(running==0){
 					running=1;
 				}
@@ -791,7 +809,8 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive 
 		}
 
 
-	if (strcmp(rx_data,SP_Command) == 0){        //&_EN_*
+	if (strcmp(rx_data,"&_SP_*\n") == 0){        //&_EN_*
+		memset(rx_data, 0, sizeof(rx_data));
 			if(running==0){
 				running=2;
 			}
@@ -801,7 +820,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive 
 	}
 
 	memset(rx_data, 0, sizeof(rx_data));
-	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data) - 1);
+	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data));
 
 	}
 
