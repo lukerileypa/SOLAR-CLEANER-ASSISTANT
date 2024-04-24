@@ -243,7 +243,9 @@ LCD_Clear();
   if(running==2){              // do the SP stuff
 
 	  if ((HAL_GetTick()-tick_SP)>200){                  // sp measure interval
-
+		  MPP = 0;                    // reset Max for next measurement
+		  MaxV = 0;                    // reset Max for next measurement
+		  MaxI = 0;                    // reset Max for next measurement
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
 		  current_circuit_measurement = (adcResultsDMA[1]-736.0)/952.0;
 		  voltage_circuit_measurement = (adcResultsDMA[2]-200.0)/1100.0;            // both in volts
@@ -251,10 +253,6 @@ LCD_Clear();
 		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
 		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
 
-//		  mV_2 = V_2*1000;                   // change to mV
-//		  V_2int = (int)mV_2;
-//		  Current = mVint - V_2int;
-//		  mI = Current;
 
 		  Power = Current*Voltage;                        // power
 
@@ -270,8 +268,8 @@ LCD_Clear();
 		  mIint = (int)mIave;
 		  mWint = (int)mW;
 
-		  prevmV = mV ;
-		  prevmI = mI ;
+//		  prevmV = mV ;
+//		  prevmI = mI ;
 
 //
 //  char uart_bufferdebug[128];  // Buffer to hold the formatted string
@@ -304,22 +302,6 @@ LCD_Clear();
 
   if((SP_dataSent==1)&&(running==0)){     // send SP after sensing period
 
-//	  char uart_bufferdebug[128];  // Buffer to hold the formatted string
-//	  	  // Format the ADC raw data into the buffer
-//	      sprintf(uart_bufferdebug, "ADC Raw voltage: %u\r\n", adcResultsDMA[2]);
-//	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
-//
-//	      sprintf(uart_bufferdebug, "ADC Raw current: %u\r\n", adcResultsDMA[1]);
-//	      	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
-
-//	      // Format the voltage measurement into the buffer
-//	      sprintf(uart_bufferdebug, "Voltage Measurement: %.3f V\r\n", voltage_circuit_measurement);
-//	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
-//
-//	      // Format the calculated voltage into the buffer
-//	      sprintf(uart_bufferdebug, "Calculated Voltage: %.3f V\r\n", Voltage);
-//	      HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
-
  	  char uart_buffer[30];
  	  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", MaxV,MaxI,MPP);
  	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
@@ -332,22 +314,6 @@ LCD_Clear();
 
    }
 
-  if((display_mode==1)&&(!idlelcdUpdated)){
-	  char line1[20];
-	  char line2[20];
-
-	  sprintf(line1, "V:%04dmV I:%03dmA ", MaxV,MaxI);    // power etc
-	  sprintf(line2, "P:%03dmW E:000 ", MPP);
-	  LCD_Clear();
-	  LCD_WriteString(line1);
-	  LCD_SetCursorSecondLine();
-	  LCD_WriteString(line2);
-	  idlelcdUpdated = true;  // Set the flag to prevent future updates
-	  MPP = 0;                    // reset Max for next measurement
-	 MaxV = 0;                    // reset Max for next measurement
-	 MaxI = 0;                    // reset Max for next measurement
-
-  }
   if((display_mode==1)&&(!lcdUpdated)){
 	  char line1[10];
 	  char line2[10];
@@ -364,6 +330,22 @@ LCD_Clear();
 	  LCD_WriteString(line3);
 	  lcdUpdated = true;  // Set the flag to prevent future updates
   }
+
+  if((display_mode==1)&&(!idlelcdUpdated)){
+	  char line1[20];
+	  char line2[20];
+
+	  sprintf(line1, "V:%04dmV I:%03dmA ", MaxV,MaxI);    // power etc
+	  sprintf(line2, "P:%03dmW E:000 ", MPP);
+	  LCD_Clear();
+	  LCD_WriteString(line1);
+	  LCD_SetCursorSecondLine();
+	  LCD_WriteString(line2);
+	  idlelcdUpdated = true;  // Set the flag to prevent future updates
+
+
+  }
+
   if((display_mode==2)&&(!lcdUpdated)){
 	  char line1[20];
 	  char line2[20];
