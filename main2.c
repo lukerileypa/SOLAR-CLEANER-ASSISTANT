@@ -245,9 +245,9 @@ LCD_Clear();
 	  if ((HAL_GetTick()-tick_SP)>200){                  // sp measure interval
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  current_circuit_measurement = (adcResultsDMA[1]-736.0)/952.0;
+		  current_circuit_measurement = (adcResultsDMA[1]-750.0)/952.0;
 		  voltage_circuit_measurement = (adcResultsDMA[2]-200.0)/1100.0;            // both in volts
-		  Voltage = (voltage_circuit_measurement*(R2+R1))/R2;     // the PVs voltage output accross total load
+		  Voltage = ((voltage_circuit_measurement*(R2+R1))/R2);     // the PVs voltage output accross total load
 		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
 		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
 
@@ -259,7 +259,7 @@ LCD_Clear();
 		  mI = Current*1000;
 		  mW = Power*1000;
 
-		  mVave = (mV + prevmV)/2;
+		  mVave = ((mV + prevmV)/2)*1.150-61.400;
 		  mIave = (mI + prevmI)/2;
 
 		  mVint = (int)mVave;                    // change to int
