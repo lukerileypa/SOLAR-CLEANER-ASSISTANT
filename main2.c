@@ -243,9 +243,7 @@ LCD_Clear();
   if(running==2){              // do the SP stuff
 
 	  if ((HAL_GetTick()-tick_SP)>200){                  // sp measure interval
-		  MPP = 0;                    // reset Max for next measurement
-		  MaxV = 0;                    // reset Max for next measurement
-		  MaxI = 0;                    // reset Max for next measurement
+
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
 		  current_circuit_measurement = (adcResultsDMA[1]-736.0)/952.0;
 		  voltage_circuit_measurement = (adcResultsDMA[2]-200.0)/1100.0;            // both in volts
@@ -268,8 +266,8 @@ LCD_Clear();
 		  mIint = (int)mIave;
 		  mWint = (int)mW;
 
-//		  prevmV = mV ;
-//		  prevmI = mI ;
+		  prevmV = mV ;
+		  prevmI = mI ;
 
 //
 //  char uart_bufferdebug[128];  // Buffer to hold the formatted string
@@ -754,6 +752,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 	if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
 		if((running==0)){
+			MPP = 0;                    // reset Max for next measurement
+				  MaxV = 0;                    // reset Max for next measurement
+				  MaxI = 0;                    // reset Max for next measurement
 			running=2;
 		}
 		else{
