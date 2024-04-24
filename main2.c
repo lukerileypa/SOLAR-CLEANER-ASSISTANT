@@ -122,10 +122,29 @@ int MaxI = 0;
 float mV_2 = 0;
 int V_2int = 0;
 
-float prevmV = 0;
-float mVave = 0;
-float prevmI = 0;
-float mIave = 0;
+int measurementCycle = 0;  // This counter will keep track of the number of measurement cycles
+
+
+#define NUM_READINGS 5
+
+int voltageReadings[NUM_READINGS] = {0}; // Array to store the last 5 voltage readings
+int voltageReadingIndex = 0;             // Index to keep track of the current reading
+int voltageSum = 0;                      // Sum of the last 5 readings for average calculation
+int voltageAverage = 0;                  // Computed average voltage
+
+#define NUM_READINGS 5
+
+int currentReadings[NUM_READINGS] = {0}; // Array to store the last 5 current readings
+int currentReadingIndex = 0;             // Index to keep track of the current reading
+int currentSum = 0;                      // Sum of the last 5 readings for average calculation
+int currentAverage = 0;                  // Computed average current
+
+#define NUM_READINGS 5
+
+int powerReadings[NUM_READINGS] = {0};
+int powerReadingIndex = 0;
+int powerSum = 0;
+int powerAverage = 0;
 
 /* USER CODE END PV */
 
@@ -143,7 +162,9 @@ void LCD_Clear(void);
 void LCD_WriteString(char* str);
 void LCD_SetCursorSecondLine(void);
 void LCD_SetCursor(uint8_t row, uint8_t col);
-
+void updateVoltageReading(int newVoltage);
+void updateCurrentReading(int newCurrent) ;
+void updatePowerReading(int newPower);
 
 
 /* USER CODE END PFP */
@@ -242,32 +263,42 @@ LCD_Clear();
 
   if(running==2){              // do the SP stuff
 
-	  if ((HAL_GetTick()-tick_SP)>200){                  // sp measure interval
+	  if ((HAL_GetTick()-tick_SP)>30){                  // sp measure interval
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  current_circuit_measurement = (adcResultsDMA[1]-750.0)/952.0;
+		  current_circuit_measurement = (adcResultsDMA[1]-735.0)/952.0;
 		  voltage_circuit_measurement = (adcResultsDMA[2]-200.0)/1100.0;            // both in volts
 		  Voltage = ((voltage_circuit_measurement*(R2+R1))/R2);     // the PVs voltage output accross total load
 		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
 		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
 
-
+		  if (Current < 0) {
+			  Current = 0;  // Set to zero if the value is negative
+			  }
 		  Power = Current*Voltage;                        // power
-
 
 		  mV = Voltage*1000;                   // change to mV
 		  mI = Current*1000;
 		  mW = Power*1000;
 
-		  mVave = ((mV + prevmV)/2)*1.150-61.400;
-		  mIave = (mI + prevmI)/2;
-
-		  mVint = (int)mVave;                    // change to int
-		  mIint = (int)mIave;
+		  mVint = (int)mV;                    // change to int
+		  mIint = (int)mI;
 		  mWint = (int)mW;
 
-		  prevmV = mV ;
-		  prevmI = mI ;
+		  updateVoltageReading(mVint);
+		if (measurementCycle > 0) {
+				updateCurrentReading(mIint);  // Update current reading if it's not the first cycle
+				updatePowerReading(mWint);
+			}
+
+			// Increment the measurement cycle counter after processing
+			measurementCycle++;
+
+//		  updateCurrentReading(mIint);
+//		  updatePowerReading(mWint);
+
+
+
 
 //
 //  char uart_bufferdebug[128];  // Buffer to hold the formatted string
@@ -276,14 +307,14 @@ LCD_Clear();
 //  HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
 
-		  if(mVint >= MaxV){                 // Max power saved here
-			  MaxV = mVint;
+		  if(voltageAverage >= MaxV){                 // Max power saved here
+			  MaxV = voltageAverage;
 			  }
-		  if(mIint >= MaxI){                 // Max power saved here
-			  MaxI = mIint;
+		  if(currentAverage >= MaxI){                 // Max power saved here
+			  MaxI = currentAverage;
 			  }
-		  if(mWint >= MPP){                 // Max power saved here
-			  MPP = mWint;
+		  if(powerAverage >= MPP){                 // Max power saved here
+			  MPP = powerAverage;
 			  }
 
 		  debounce_on_lift(DEBOUNCE_DELAY);
@@ -316,15 +347,15 @@ LCD_Clear();
 	  char line1[10];
 	  char line2[10];
 	  char line3[10];
-	  sprintf(line1, "%04d", mVint);    // power etc
-	  sprintf(line2, "%03d", mIint);
-	  sprintf(line3, "%03d", mWint);
+	  sprintf(line1, "%04d", voltageAverage);    // power etc
+	  sprintf(line2, "%03d", currentAverage);
+	  sprintf(line3, "%03d", powerAverage);
 
 	  LCD_SetCursor(0, 2);
 	  LCD_WriteString(line1);
 	  LCD_SetCursor(0, 11);
 	  LCD_WriteString(line2);
-	  LCD_SetCursor(1, 2);
+	  LCD_SetCursor(1, 3);
 	  LCD_WriteString(line3);
 	  lcdUpdated = true;  // Set the flag to prevent future updates
   }
@@ -334,13 +365,12 @@ LCD_Clear();
 	  char line2[20];
 
 	  sprintf(line1, "V:%04dmV I:%03dmA ", MaxV,MaxI);    // power etc
-	  sprintf(line2, "P:%03dmW E:000 ", MPP);
+	  sprintf(line2, "P: %03dmW E:000 ", MPP);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
 	  LCD_WriteString(line2);
 	  idlelcdUpdated = true;  // Set the flag to prevent future updates
-
 
   }
 
@@ -348,7 +378,7 @@ LCD_Clear();
 	  char line1[20];
 	  char line2[20];
 	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);     // Temp etc
-	  sprintf(line2, "Lux:%03d", intLux);
+	  sprintf(line2, "Lux:%05d", intLux);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
@@ -704,6 +734,52 @@ void LCD_SetCursor(uint8_t row, uint8_t col) {
     LCD_SendCommand(0x80 | address);
 }
 
+void updateVoltageReading(int newVoltage) {
+    // Subtract the oldest reading from the sum to maintain a rolling sum
+    voltageSum -= voltageReadings[voltageReadingIndex];
+
+    // Store the new voltage reading and update the sum
+    voltageReadings[voltageReadingIndex] = newVoltage;
+    voltageSum += newVoltage;
+
+    // Calculate the average from the sum
+    if (voltageReadingIndex >= NUM_READINGS - 1) { // Start averaging once we have enough samples
+        voltageAverage = voltageSum / NUM_READINGS;
+    }
+
+    // Increment the index and wrap around using modulo operation
+    voltageReadingIndex = (voltageReadingIndex + 1) % NUM_READINGS;
+}
+
+void updateCurrentReading(int newCurrent) {
+    // Subtract the oldest reading from the sum to maintain a rolling sum
+    currentSum -= currentReadings[currentReadingIndex];
+
+    // Store the new current reading and update the sum
+    currentReadings[currentReadingIndex] = newCurrent;
+    currentSum += newCurrent;
+
+    // Calculate the average from the sum
+    if (currentReadingIndex >= NUM_READINGS - 1) { // Start averaging once we have enough samples
+        currentAverage = currentSum / NUM_READINGS;
+    }
+
+    // Increment the index and wrap around using modulo operation
+    currentReadingIndex = (currentReadingIndex + 1) % NUM_READINGS;
+}
+
+void updatePowerReading(int newPower) {
+    powerSum -= powerReadings[powerReadingIndex];  // Subtract the oldest reading
+    powerReadings[powerReadingIndex] = newPower;  // Insert the new reading
+    powerSum += newPower;  // Add the new reading to the sum
+
+    // Update the average after every full cycle of readings
+    if (powerReadingIndex >= NUM_READINGS - 1) {
+        powerAverage = powerSum / NUM_READINGS;
+    }
+
+    powerReadingIndex = (powerReadingIndex + 1) % NUM_READINGS;  // Move to the next index
+}
 
 bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 	PB8_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_8);
