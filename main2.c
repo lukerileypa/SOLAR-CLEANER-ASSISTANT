@@ -188,7 +188,7 @@ int main(void)
   HAL_UART_Transmit(&huart2,"_*",2,100);
   HAL_UART_Transmit(&huart2,"\n\r",1,100);
 
-	HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data));
+HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data));
 
 LCD_Init();
 LCD_Clear();
@@ -240,10 +240,10 @@ LCD_Clear();
 	  if ((HAL_GetTick()-tick_SP)>200){                  // sp measure interval
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  current_circuit_measurement = ((adcResultsDMA[1]-700)*3.300)/4096.000;
+		  current_circuit_measurement = ((adcResultsDMA[1]-600)*3.300)/4096.000;
 		  voltage_circuit_measurement = ((adcResultsDMA[2]-200)*3.300)/4096.000;            // both in volts
 		  Voltage = (voltage_circuit_measurement*(R2+R1))/R2;     // the PVs voltage output accross total load
-		  V_2 = (current_circuit_measurement*(R2+R1))/R2-0.350;   // should be slightly less, used to compare for current accross Rsense
+		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
 //		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
 
 		  mV_2 = V_2*1000;                   // change to mV
@@ -253,10 +253,6 @@ LCD_Clear();
 
 		  Power = Current*Voltage;                        // power
 
-//char uart_bufferdebug[128];  // Buffer to hold the formatted string
-//// Format the ADC raw data into the buffer
-//sprintf(uart_bufferdebug, " Voltage: %u V_2:%u Current: %u\r\n", Voltage,V_2, Current);
-//HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
 		  mV = Voltage*1000;                   // change to mV
 //		  mI = Current*1000;
@@ -270,11 +266,12 @@ LCD_Clear();
 
   char uart_bufferdebug[128];  // Buffer to hold the formatted string
   // Format the ADC raw data into the buffer
-  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n",  mVint, mIint);
+  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n",  adcResultsDMA[2]-200, adcResultsDMA[1]-500);
   HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
+
 		  if(mVint >= MaxV){                 // Max power saved here
-			  MaxV = mWint;
+			  MaxV = mVint;
 			  }
 		  if(mIint >= MaxI){                 // Max power saved here
 			  MaxI = mIint;
@@ -287,11 +284,6 @@ LCD_Clear();
 		  SP_dataSent=1;
 		  tick_SP = HAL_GetTick();
 		  lcdUpdated = 0;
-
-
-		  char uart_buffer[30];
-		  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", mVint,mIint,MPP);
-		  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
 
 	  	  }
 	  if ((HAL_GetTick()-tick_LED)>100){                       // flash LED
@@ -328,7 +320,6 @@ LCD_Clear();
  	  SP_dataSent = 0;  // Clear the flag when running is not zero
  	 idlelcdUpdated = 0;
 
-
    }
 
   if((display_mode==1)&&(!idlelcdUpdated)){
@@ -343,6 +334,9 @@ LCD_Clear();
 	  LCD_WriteString(line2);
 	  idlelcdUpdated = true;  // Set the flag to prevent future updates
 	  MPP = 0;                    // reset Max for next measurement
+	 MaxV = 0;                    // reset Max for next measurement
+	 MaxI = 0;                    // reset Max for next measurement
+
   }
   if((display_mode==1)&&(!lcdUpdated)){
 	  char line1[10];
