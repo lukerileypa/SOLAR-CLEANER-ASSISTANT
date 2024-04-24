@@ -104,7 +104,7 @@ static uint32_t tick_LED = 0;
 float Voltage = 0;      // voltage circuit measurement
 float R1 = 120000;
 float R2 = 82000;
-float Rsense = 1;
+float Rsense = 4.7;
 float V_2 = 0;    //current circuit measurement
 float Current = 0;
 float Power = 0;
@@ -121,6 +121,11 @@ int MaxI = 0;
 
 float mV_2 = 0;
 int V_2int = 0;
+
+float prevmV = 0;
+float mVave = 0;
+float prevmI = 0;
+float mIave = 0;
 
 /* USER CODE END PV */
 
@@ -240,34 +245,39 @@ LCD_Clear();
 	  if ((HAL_GetTick()-tick_SP)>200){                  // sp measure interval
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  current_circuit_measurement = ((adcResultsDMA[1]-600)*3.300)/4096.000;
-		  voltage_circuit_measurement = ((adcResultsDMA[2]-200)*3.300)/4096.000;            // both in volts
+		  current_circuit_measurement = (adcResultsDMA[1]-736.0)/952.0;
+		  voltage_circuit_measurement = (adcResultsDMA[2]-200.0)/1100.0;            // both in volts
 		  Voltage = (voltage_circuit_measurement*(R2+R1))/R2;     // the PVs voltage output accross total load
 		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
-//		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
+		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
 
-		  mV_2 = V_2*1000;                   // change to mV
-		  V_2int = (int)mV_2;
-		  Current = mVint - V_2int;
-		  mI = Current;
+//		  mV_2 = V_2*1000;                   // change to mV
+//		  V_2int = (int)mV_2;
+//		  Current = mVint - V_2int;
+//		  mI = Current;
 
 		  Power = Current*Voltage;                        // power
 
 
 		  mV = Voltage*1000;                   // change to mV
-//		  mI = Current*1000;
+		  mI = Current*1000;
 		  mW = Power*1000;
 
-		  mVint = (int)mV;                    // change to int
-		  mIint = (int)mI;
+		  mVave = (mV + prevmV)/2;
+		  mIave = (mI + prevmI)/2;
+
+		  mVint = (int)mVave;                    // change to int
+		  mIint = (int)mIave;
 		  mWint = (int)mW;
 
+		  prevmV = mV ;
+		  prevmI = mI ;
 
-
-  char uart_bufferdebug[128];  // Buffer to hold the formatted string
-  // Format the ADC raw data into the buffer
-  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n",  adcResultsDMA[2]-200, adcResultsDMA[1]-500);
-  HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+//
+//  char uart_bufferdebug[128];  // Buffer to hold the formatted string
+//  // Format the ADC raw data into the buffer
+//  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n",  adcResultsDMA[2], adcResultsDMA[1]);
+//  HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
 
 		  if(mVint >= MaxV){                 // Max power saved here
