@@ -264,11 +264,12 @@ LCD_Clear();
 	  if ((HAL_GetTick()-tick_SP)>30){                  // sp measure interval
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  current_circuit_measurement = (adcResultsDMA[1]-735.0)/952.0;
-		  voltage_circuit_measurement = (adcResultsDMA[2]-200.0)/1100.0;            // both in volts
+		  current_circuit_measurement = (adcResultsDMA[1]-570.000)/1020.000;
+		  voltage_circuit_measurement = (adcResultsDMA[2]-175.92)/1080.1;            // both in volts
 		  Voltage = ((voltage_circuit_measurement*(R2+R1))/R2);     // the PVs voltage output accross total load
 		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
 		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
+
 
 		  if (Current < 0) {
 			  Current = 0;  // Set to zero if the value is negative
@@ -292,10 +293,10 @@ LCD_Clear();
 			// Increment the measurement cycle counter after processing
 			measurementCycle++;
 
-//  char uart_bufferdebug[128];  // Buffer to hold the formatted string
-//  // Format the ADC raw data into the buffer
-//  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n",  adcResultsDMA[2], adcResultsDMA[1]);
-//  HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+  char uart_bufferdebug[128];  // Buffer to hold the formatted string
+  // Format the ADC raw data into the buffer
+  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n", mVint , mIint);
+  HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
 
 
 		  if(voltageAverage >= MaxV){                 // Max power saved here
@@ -349,6 +350,8 @@ LCD_Clear();
 	  LCD_SetCursor(1, 3);
 	  LCD_WriteString(line3);
 	  lcdUpdated = true;  // Set the flag to prevent future updates
+	  debounce_on_lift(DEBOUNCE_DELAY);
+
   }
 
   if((display_mode==1)&&(!idlelcdUpdated)){
@@ -362,6 +365,7 @@ LCD_Clear();
 	  LCD_SetCursorSecondLine();
 	  LCD_WriteString(line2);
 	  idlelcdUpdated = true;  // Set the flag to prevent future updates
+	  debounce_on_lift(DEBOUNCE_DELAY);
 
   }
 
@@ -375,6 +379,7 @@ LCD_Clear();
 	  LCD_SetCursorSecondLine();
 	  LCD_WriteString(line2);
 	  amblcdUpdated = true;  // Set the flag to prevent future updates
+	  debounce_on_lift(DEBOUNCE_DELAY);
   }
 
   }
@@ -650,6 +655,7 @@ void LCD_Init(void) {
 
 
 void LCD_SendCommand(uint8_t command) {
+	  debounce_on_lift(DEBOUNCE_DELAY);
   HAL_GPIO_WritePin(RS_GPIO_Port, RS_Pin, GPIO_PIN_RESET);
   HAL_GPIO_WritePin(D4_GPIO_Port, D4_Pin, (command >> 4) & 1);
   HAL_GPIO_WritePin(D5_GPIO_Port, D5_Pin, (command >> 5) & 1);
@@ -667,6 +673,7 @@ void LCD_SendCommand(uint8_t command) {
   HAL_Delay(1);
   HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
   HAL_Delay(1);
+
 }
 
 void LCD_SendData(uint8_t data) {
@@ -688,6 +695,7 @@ HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_SET);
 HAL_Delay(1);
 HAL_GPIO_WritePin(EN_GPIO_Port, EN_Pin, GPIO_PIN_RESET);
 HAL_Delay(1);
+debounce_on_lift(DEBOUNCE_DELAY);
 }
 
 void LCD_Clear(void) {
@@ -708,7 +716,7 @@ void LCD_SetCursorSecondLine(void) {
 
 void LCD_SetCursor(uint8_t row, uint8_t col) {
     uint8_t address;
-
+	  debounce_on_lift(DEBOUNCE_DELAY);
     // Calculate the correct DDRAM address based on the row and column
     switch(row) {
         case 0:
@@ -726,6 +734,7 @@ void LCD_SetCursor(uint8_t row, uint8_t col) {
 }
 
 void updateVoltageReading(int newVoltage) {
+	  debounce_on_lift(DEBOUNCE_DELAY);
     // Subtract the oldest reading from the sum to maintain a rolling sum
     voltageSum -= voltageReadings[voltageReadingIndex];
 
@@ -743,6 +752,7 @@ void updateVoltageReading(int newVoltage) {
 }
 
 void updateCurrentReading(int newCurrent) {
+	  debounce_on_lift(DEBOUNCE_DELAY);
     // Subtract the oldest reading from the sum to maintain a rolling sum
     currentSum -= currentReadings[currentReadingIndex];
 
@@ -757,6 +767,7 @@ void updateCurrentReading(int newCurrent) {
 
     // Increment the index and wrap around using modulo operation
     currentReadingIndex = (currentReadingIndex + 1) % NUM_READINGS;
+
 }
 
 void updatePowerReading(int newPower) {
@@ -820,8 +831,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8 button
 		if((running==0)){
 			MPP = 0;                    // reset Max for next measurement
-				  MaxV = 0;                    // reset Max for next measurement
-				  MaxI = 0;                    // reset Max for next measurement
+		  MaxV = 0;                    // reset Max for next measurement
+		  MaxI = 0;                    // reset Max for next measurement
 			running=2;
 		}
 		else{
