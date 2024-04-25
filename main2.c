@@ -264,12 +264,15 @@ LCD_Clear();
 	  if ((HAL_GetTick()-tick_SP)>30){                  // sp measure interval
 
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-		  current_circuit_measurement = (adcResultsDMA[1]-570.000)/1020.000;
-		  voltage_circuit_measurement = (adcResultsDMA[2]-175.92)/1080.1;            // both in volts
+		  
+//		  current_circuit_measurement = (adcResultsDMA[1]-570.000)/1020.000;
+//		  voltage_circuit_measurement = (adcResultsDMA[2]-175.92)/1080.1;            // old
+		  
+		  current_circuit_measurement = (adcResultsDMA[1]-738.16)/932.51;
+		  voltage_circuit_measurement = (adcResultsDMA[2]-212.34)/1062.4;            // both in volts
 		  Voltage = ((voltage_circuit_measurement*(R2+R1))/R2);     // the PVs voltage output accross total load
 		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
 		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
-
 
 		  if (Current < 0) {
 			  Current = 0;  // Set to zero if the value is negative
@@ -293,10 +296,7 @@ LCD_Clear();
 			// Increment the measurement cycle counter after processing
 			measurementCycle++;
 
-  char uart_bufferdebug[128];  // Buffer to hold the formatted string
-  // Format the ADC raw data into the buffer
-  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n", mVint , mIint);
-  HAL_UART_Transmit(&huart2, (uint8_t*)uart_bufferdebug, strlen(uart_bufferdebug), HAL_MAX_DELAY);
+ 
 
 
 		  if(voltageAverage >= MaxV){                 // Max power saved here
