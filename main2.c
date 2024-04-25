@@ -96,6 +96,7 @@ float current_circuit_measurement = 0;
 float voltage_circuit_measurement = 0;
 bool lcdUpdated = 0;
 bool idlelcdUpdated = 0;
+amblcdUpdated = 0;
 int EN_dataSent = 0;  // Flag to indicate that data has been sent
 int SP_dataSent = 0;  // Flag to indicate that data has been sent
 int tick_SP = 0;
@@ -132,14 +133,11 @@ int voltageReadingIndex = 0;             // Index to keep track of the current r
 int voltageSum = 0;                      // Sum of the last 5 readings for average calculation
 int voltageAverage = 0;                  // Computed average voltage
 
-#define NUM_READINGS 5
-
 int currentReadings[NUM_READINGS] = {0}; // Array to store the last 5 current readings
 int currentReadingIndex = 0;             // Index to keep track of the current reading
 int currentSum = 0;                      // Sum of the last 5 readings for average calculation
 int currentAverage = 0;                  // Computed average current
 
-#define NUM_READINGS 5
 
 int powerReadings[NUM_READINGS] = {0};
 int powerReadingIndex = 0;
@@ -257,7 +255,7 @@ LCD_Clear();
 	  memset(rx_data, 0, sizeof(rx_data));
 	  debounce_on_lift(DEBOUNCE_DELAY);
 	  EN_dataSent = 0;  // Clear the flag when running is not zero
-	  lcdUpdated = 0;
+	  amblcdUpdated = 0;
   }
 
 
@@ -294,13 +292,6 @@ LCD_Clear();
 			// Increment the measurement cycle counter after processing
 			measurementCycle++;
 
-//		  updateCurrentReading(mIint);
-//		  updatePowerReading(mWint);
-
-
-
-
-//
 //  char uart_bufferdebug[128];  // Buffer to hold the formatted string
 //  // Format the ADC raw data into the buffer
 //  sprintf(uart_bufferdebug, " Voltage: %d Current: %d\r\n",  adcResultsDMA[2], adcResultsDMA[1]);
@@ -374,7 +365,7 @@ LCD_Clear();
 
   }
 
-  if((display_mode==2)&&(!lcdUpdated)){
+  if((display_mode==2)&&(!amblcdUpdated)){
 	  char line1[20];
 	  char line2[20];
 	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);     // Temp etc
@@ -383,7 +374,7 @@ LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
 	  LCD_WriteString(line2);
-	  lcdUpdated = true;  // Set the flag to prevent future updates
+	  amblcdUpdated = true;  // Set the flag to prevent future updates
   }
 
   }
@@ -843,6 +834,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
 		idlelcdUpdated = 0;
 		lcdUpdated = 0;
+		amblcdUpdated = 0;
 		display_mode++;
 
 		if((display_mode==3)){    // adjust to 5 when extra modes added
