@@ -258,6 +258,7 @@ LCD_Clear();
 	  if((((HAL_GetTick()-tick_LED)>=50))) {            // led flash period
 			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
 			tick_LED = HAL_GetTick();
+			 debounce_on_lift(DEBOUNCE_DELAY);
 			}
 
 	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
@@ -286,6 +287,7 @@ LCD_Clear();
 
 
   if(running==2){              // do the SP stuff
+
 
 
 	  if (((tick_active_load - HAL_GetTick())>=100)&&(duty_cycle<100)){
@@ -339,6 +341,7 @@ LCD_Clear();
 		  debounce_on_lift(DEBOUNCE_DELAY);
 		  SP_dataSent=1;
 		  tick_SP = HAL_GetTick();
+		  display_mode=1;
 		  lcdUpdated = 0;
 
 	  	  }
@@ -347,84 +350,6 @@ LCD_Clear();
 		  tick_LED = HAL_GetTick();
 		  }
   }
-
-
-	  if (running == 3) { // time set mode
-	      if (middle == 1) {
-	          i++;
-	          middle = 0;
-	      }
-
-	      while (i == 1) {                     // setting date
-	          if (top == 1) {
-	              HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-	              sDate.Date++;
-	              HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-	              top = 0;
-	          }
-	          if (bottom == 1) {
-	        	  HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-	              sDate.Date--;
-	              HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-	              bottom = 0;
-	          }
-	      }
-
-	      if (i == 2) {                         //setting month
-	          if (top == 1) {
-	              sDate.Month++;
-	              top = 0;
-	          }
-	          if (bottom == 1) {
-	              sDate.Month--;
-	              bottom = 0;
-	          }
-	      }
-
-	      if (i == 3) {
-	          if (top == 1) {
-	              sDate.Year++;
-	              top = 0;
-	          }
-	          if (bottom == 1) {
-	              sDate.Year--;
-	              bottom = 0;
-	          }
-	      }
-
-	      if (i == 4) {
-	          if (top == 1) {
-	              sTime.Hours++;
-	              top = 0;
-	          }
-	          if (bottom == 1) {
-	              sTime.Hours--;
-	              bottom = 0;
-	          }
-	      }
-
-	      if (i == 5) {
-	          if (top == 1) {
-	              sTime.Minutes++;
-	              top = 0;
-	          }
-	          if (bottom == 1) {
-	              sTime.Minutes--;
-	              bottom = 0;
-	          }
-	      }
-
-	      if (i == 6) {
-	          if (top == 1) {
-	              sTime.Seconds++;
-	              top = 0;
-	          }
-	          if (bottom == 1) {
-	              sTime.Seconds--;
-	              bottom = 0;
-	          }
-	      }
-	  }
 
 
 
@@ -490,40 +415,7 @@ LCD_Clear();
 	  debounce_on_lift(DEBOUNCE_DELAY);
   }
 
-    if((display_mode==3)&&(!lcdUpdated)){   	// date n time
-
-		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-
-  	  char date[20];
-  	  char time[20];
-  	  sprintf(date, "DATE:%02d/%02d/20%02d", sDate.Date,sDate.Month,sDate.Year);     // Temp etc
-  	  sprintf(time, "TIME:%02d/%02d/%02d", sTime.Hours,sTime.Minutes,sTime.Seconds);
-
-  	  LCD_Clear();
-  	  LCD_WriteString(date);
-  	  LCD_SetCursorSecondLine();
-  	  LCD_WriteString(time);
-  	 lcdUpdated = true;  // Set the flag to prevent future updates
-  	 LCD_mins_nSecs = 0;
-    }
-
-    if((display_mode==3)&&(!LCD_mins_nSecs)&&((lcdUpdated))){   	// date n time
-
-   		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-   		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-
-	  char line2[10];
-	  sprintf(line2, "%02d/%02d", sTime.Minutes,sTime.Seconds);
-
-
-	  LCD_SetCursor(1, 8);     //set cursor to mins n secs place
-	  LCD_WriteString(line2);
-
-	  lcdUpdated = true;  // Set the flag to prevent future updates
-	  debounce_on_lift(DEBOUNCE_DELAY);
-
-       }
+  debounce_on_lift(DEBOUNCE_DELAY);
 }
 
 }
@@ -895,8 +787,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB10 PB4 PB8 PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_4|GPIO_PIN_8|GPIO_PIN_9;
+  /*Configure GPIO pins : PB10 PB4 PB5 PB8
+                           PB9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_8
+                          |GPIO_PIN_9;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -914,7 +808,7 @@ static void MX_GPIO_Init(void)
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 1);
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
@@ -1095,12 +989,13 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	}
 
 	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // top button
+
 		if((running==0)){
 			running=1;
 		}
-		if((running==3)){           //  while in mode 3 inc
-			top=1;
-			}
+//		if((running==3)){           //  while in mode 3 inc
+//			top=1;
+//			}
 		else{
 			running=0;
 		}
@@ -1117,9 +1012,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 			tick_active_load = HAL_GetTick();
 			running=2;
 		}
-		if((running==3)){              //  while in mode 3 dec
-			bottom=1;
-		}
+//		if((running==3)){              //  while in mode 3 dec
+//			bottom=1;
+//		}
 		else{
 			running=0;
 		}
@@ -1139,17 +1034,16 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		previousMillis = currentMillis;
 	}
 
-	if((GPIO_Pin == GPIO_PIN_4)&&((currentMillis - previousMillis)>=5)){  // middle button
-		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6); // for debug
-		if((running==0)){
-			running=3;      //set dattime mode
-		}
-		if(running==3){
-			middle = 1;
-		}
-		previousMillis = currentMillis;
-	}
-
+//	if((GPIO_Pin == GPIO_PIN_4)&&((currentMillis - previousMillis)>=5)){  // middle button
+//
+//		if((running==0)){
+//			running=3;      //set datetime mode
+//		}
+//		if(running==3){
+//			middle = 1;
+//		}
+//		previousMillis = currentMillis;
+//	}
 
 
 }
