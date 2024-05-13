@@ -40,10 +40,6 @@
 #define D6_GPIO_Port GPIOB
 #define D7_Pin GPIO_PIN_12
 #define D7_GPIO_Port GPIOB
-
- RTC_TimeTypeDef sTime = {0};
-  RTC_DateTypeDef sDate = {0};
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -93,6 +89,8 @@ int DEBOUNCE_DELAY = 100; // Debounce delay in milliseconds
 uint32_t PB8_high = 0;
 uint32_t PB9_high = 0;
 uint32_t PB10_high = 0;
+uint32_t PB5_high = 0;
+uint32_t PB3_high = 0;
 uint32_t bounce_tick = 0;
 uint32_t allow_press = true;
 float Temp = 0;
@@ -102,10 +100,9 @@ int intdigiTemp = 0;
 int intLux = 0;
 float current_circuit_measurement = 0;
 float voltage_circuit_measurement = 0;
-bool lcdUpdated = 0;                        //LCD flags
+bool lcdUpdated = 0;
 bool idlelcdUpdated = 0;
 bool amblcdUpdated = 0;
-bool LCD_mins_nSecs = 0;
 int EN_dataSent = 0;  // Flag to indicate that data has been sent
 int SP_dataSent = 0;  // Flag to indicate that data has been sent
 int tick_SP = 0;
@@ -134,8 +131,6 @@ int V_2int = 0;
 
 int measurementCycle = 0;  // This counter will keep track of the number of measurement cycles
 
-uint8_t duty_cycle = 0;
-uint32_t tick_active_load = 0;
 
 #define NUM_READINGS 3
 
@@ -155,12 +150,19 @@ int powerReadingIndex = 0;
 int powerSum = 0;
 int powerAverage = 0;
 
-int top = 0;    // for setting time
-int middle = 0 ;
+uint8_t duty_cycle = 0;
+uint32_t tick_active_load = 0;
+
+int LCD_mins_nSecs = 0;
+RTC_TimeTypeDef sTime = {0};
+RTC_DateTypeDef sDate = {0};
+int top = 0;
+int middle = 0;
 int bottom = 0;
-int i = 0;       // for cases
+int i = 0;
 
-
+int calibration = 0;
+int send_temp = 0;        // for calibration to send uart temp
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -182,7 +184,7 @@ void LCD_SetCursor(uint8_t row, uint8_t col);
 void updateVoltageReading(int newVoltage);
 void updateCurrentReading(int newCurrent) ;
 void updatePowerReading(int newPower);
-
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin);
 
 /* USER CODE END PFP */
 
@@ -238,11 +240,8 @@ HAL_UART_Receive_IT(&huart2, (uint8_t*)rx_data, sizeof(rx_data));
 LCD_Init();
 LCD_Clear();
 
-
-
  //LCD end//
 //running=0;
-
 
   /* USER CODE END 2 */
 
@@ -253,14 +252,12 @@ LCD_Clear();
 
   debounce_on_lift(DEBOUNCE_DELAY);
 
-  if(running==1){         // do the EN stuff
+  if((running==1)||(calibration==1)){         // do the EN stuff
 
 	  if((((HAL_GetTick()-tick_LED)>=50))) {            // led flash period
-			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
-			tick_LED = HAL_GetTick();
-			 debounce_on_lift(DEBOUNCE_DELAY);
-			}
-
+		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_6);
+		tick_LED = HAL_GetTick();
+		}
 	  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
 	  Temp = (adcResultsDMA[0] * 3.3) / 4096.0 * 100.0 - 273;    // Convert to string and print
 	  Lux = (adcResultsDMA[3]*30000)/4096.0;                     // convert to lux
@@ -271,101 +268,196 @@ LCD_Clear();
 	  debounce_on_lift(DEBOUNCE_DELAY);
 
   }
-  if((running==0)&&(EN_dataSent==1)){                  // send after sensing period
+  if(((running==0)&&(EN_dataSent==1))||(send_temp==1)){                  // send after sensing period
 	  char uart_buffer[20];
 	  sprintf(uart_buffer, "&_%03d_%03d_%05d_*\r\n", intTempADC,intdigiTemp,intLux);
 	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
-
 	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, SET); // leave led on after sensing
 	  memset(rx_data, 0, sizeof(rx_data));
 	  debounce_on_lift(DEBOUNCE_DELAY);
 	  EN_dataSent = 0;  // Clear the flag when running is not zero
-	  display_mode=2;
 	  amblcdUpdated = 0;
-
+	  display_mode = 2;
   }
 
 
-  if(running==2){              // do the SP stuff
+  if((running==2)||(calibration==2)){              // do the SP stuff
 
+	  if (((tick_active_load - HAL_GetTick())>=200)&&(duty_cycle<100)){
+				  duty_cycle++;                                              // increment duty cycle by 1 every 100ms but stop at 100%
+				  tick_active_load = HAL_GetTick();
+		  }
+		  TIM1->CCR4 = duty_cycle;
+		  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
 
-
-	  if (((tick_active_load - HAL_GetTick())>=100)&&(duty_cycle<100)){
-			  duty_cycle++;   // increment duty cycle by 1 every 100ms but stop at 100%
-			  tick_active_load = HAL_GetTick();
-	  }
-	  TIM1->CCR4 = duty_cycle;
-	  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
-
-
-	  if ((HAL_GetTick()-tick_SP)>30){                  // sp measure interval
-
-		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4); //HAL_ADC_Start_DMA(hadc, pData, Length)
-
+	  if ((HAL_GetTick()-tick_SP)>45){                                               // sp measure interval
+		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4);                       //HAL_ADC_Start_DMA(hadc, pData, Length)
 		  current_circuit_measurement = (adcResultsDMA[1]-738.16)/932.51;
 		  voltage_circuit_measurement = (adcResultsDMA[2]-212.34)/1062.4;            // both in volts
-		  Voltage = ((voltage_circuit_measurement*(R2+R1))/R2);     // the PVs voltage output accross total load
-		  V_2 = (current_circuit_measurement*(R2+R1))/R2;   // should be slightly less, used to compare for current accross Rsense
-		  Current = (Voltage-V_2)/Rsense;                  // current through Rsense and thus load
+		  Voltage = ((voltage_circuit_measurement*(R2+R1))/R2);                  // the PVs voltage output accross total load
+		  V_2 = (current_circuit_measurement*(R2+R1))/R2;                       // should be slightly less, used to compare for current accross Rsense
+		  Current = (Voltage-V_2)/Rsense;                                       // current through Rsense and thus load
 
 		  if (Current < 0) {
-			  Current = 0;  // Set to zero if the value is negative
+			  Current = 0;            // Set to zero if the value is negative
 			  }
-		  Power = Current*Voltage;                        // power
 
+		  Power = Current*Voltage;              // power
 		  mV = Voltage*1000;                   // change to mV
 		  mI = Current*1000;
 		  mW = Power*1000;
-
 		  mVint = (int)mV;                    // change to int
 		  mIint = (int)mI;
 		  mWint = (int)mW;
 
 		  updateVoltageReading(mVint);
-
-		if (measurementCycle > 5) {
-				updateCurrentReading(mIint);  // Update current reading if it's not the first cycle
-				updatePowerReading(mWint);
-			}
+		  if (measurementCycle > 6) {
+			updateCurrentReading(mIint);  // Update current reading if it's not the first cycle
+			updatePowerReading(mWint);
+		  }
 
 			// Increment the measurement cycle counter after processing
 			measurementCycle++;
 
-
 		  if(powerAverage >= MPP){                 // Max power saved here
-			  MPP = powerAverage;
-			  MppV = voltageAverage;
-			  MppI = currentAverage;
-			  }
-
+		  MPP = powerAverage;
+		  MppI = currentAverage;
+		  MppV = voltageAverage;
+		  }
 		  debounce_on_lift(DEBOUNCE_DELAY);
 		  SP_dataSent=1;
 		  tick_SP = HAL_GetTick();
-		  display_mode=1;
 		  lcdUpdated = 0;
+		  display_mode=1;
 
 	  	  }
 	  if ((HAL_GetTick()-tick_LED)>100){                       // flash LED
 		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		  tick_LED = HAL_GetTick();
 		  }
-  }
+	  debounce_on_lift(DEBOUNCE_DELAY);
+  	  }
 
+  	  if (running == 3) {                 // time set mode
+  		 char line1[10];
+  		  	            sprintf(line1, "we here");     // for debug
+  		  	           	  LCD_WriteString(line1);
+  		  	             lcdUpdated=0;
+  	      if (middle == 1) {
+  	          i++;
+  	          middle = 0;
+  	      }
 
+  	       if (i == 1) {                     // setting date
+  	          if (top == 1) {
+  	              HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  	              sDate.Date++;
+  	              HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  	              top = 0;
+  	            char line1[10];
+  	            sprintf(line1, "we here");     // for debug
+  	           	  LCD_WriteString(line1);
+  	             lcdUpdated=0;
 
+  	          }
+  	          if (bottom == 1) {
+  	        	  HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  	              sDate.Date--;
+  	              HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  	              bottom = 0;
+  	          }
+  	          debounce_on_lift(DEBOUNCE_DELAY);
+  	      }
+
+  	      if (i == 2) {                         //setting month
+  	          if (top == 1) {
+  	              sDate.Month++;
+  	              top = 0;
+  	          }
+  	          if (bottom == 1) {
+  	              sDate.Month--;
+  	              bottom = 0;
+  	          }
+  	      }
+
+  	      if (i == 3) {
+  	          if (top == 1) {
+  	              sDate.Year++;
+  	              top = 0;
+  	          }
+  	          if (bottom == 1) {
+  	              sDate.Year--;
+  	              bottom = 0;
+  	          }
+  	      }
+
+  	      if (i == 4) {
+  	          if (top == 1) {
+  	              sTime.Hours++;
+  	              top = 0;
+  	          }
+  	          if (bottom == 1) {
+  	              sTime.Hours--;
+  	              bottom = 0;
+  	          }
+  	      }
+
+  	      if (i == 5) {
+  	          if (top == 1) {
+  	              sTime.Minutes++;
+  	              top = 0;
+  	          }
+  	          if (bottom == 1) {
+  	              sTime.Minutes--;
+  	              bottom = 0;
+  	          }
+  	      }
+
+  	      if (i == 6) {
+  	          if (top == 1) {
+  	              sTime.Seconds++;
+  	              top = 0;
+  	          }
+  	          if (bottom == 1) {
+  	              sTime.Seconds--;
+  	              bottom = 0;
+  	          }
+  	      }debounce_on_lift(DEBOUNCE_DELAY);
+  	  }
+
+  	  if(running==4){
+
+  		 if((((HAL_GetTick()-tick_LED)>=200))) {            // led flash period
+			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
+			tick_LED = HAL_GetTick();
+			}
+  		 if((HAL_GetTick()-tick)<500) {            // set amb ,measuerment
+  			calibration=1;
+			}
+  		 if(((HAL_GetTick()-tick)>500)&&(EN_dataSent != 0)){         // set SP ,easurement
+  			send_temp = 1;
+  			calibration = 2;
+  			send_temp = 0;
+  			 EN_dataSent = 0;
+
+  		 }
+  		 if ((HAL_GetTick()-tick)>=10000){
+  			 calibration = 0;
+  			 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, SET); // leave led on after sensing
+  			 running=0;
+  		 }
+
+  	  }
 
   if((SP_dataSent==1)&&(running==0)){     // send SP after sensing period
-
  	  char uart_buffer[30];
  	  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", MppV,MppI,MPP);
  	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
-
  	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET); // leave led on after sensing
  	  memset(rx_data, 0, sizeof(rx_data));
  	  debounce_on_lift(DEBOUNCE_DELAY);
  	  SP_dataSent = 0;  // Clear the flag when running is not zero
  	 idlelcdUpdated = 0;
-
    }
 
   if((display_mode==1)&&(!lcdUpdated)){
@@ -375,7 +467,6 @@ LCD_Clear();
 	  sprintf(line1, "%04d", voltageAverage);    // power etc
 	  sprintf(line2, "%03d", currentAverage);
 	  sprintf(line3, "%03d", powerAverage);
-
 	  LCD_SetCursor(0, 2);
 	  LCD_WriteString(line1);
 	  LCD_SetCursor(0, 11);
@@ -390,7 +481,6 @@ LCD_Clear();
   if((display_mode==1)&&(!idlelcdUpdated)){
 	  char line1[20];
 	  char line2[20];
-
 	  sprintf(line1, "V:%04dmV I:%03dmA ", MppV,MppI);    // power etc
 	  sprintf(line2, "P: %03dmW E:000 ", MPP);
 	  LCD_Clear();
@@ -415,19 +505,49 @@ LCD_Clear();
 	  debounce_on_lift(DEBOUNCE_DELAY);
   }
 
-  debounce_on_lift(DEBOUNCE_DELAY);
-}
+      if((display_mode==3)&&(!lcdUpdated)){   	// date n time
 
-}
+  		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+    	  char date[20];
+    	  char time[20];
+    	  sprintf(date, "DATE:%02d/%02d/20%02d", sDate.Date,sDate.Month,sDate.Year);     // Temp etc
+    	  sprintf(time, "TIME:%02d/%02d/%02d", sTime.Hours,sTime.Minutes,sTime.Seconds);
+
+    	  LCD_Clear();
+    	  LCD_WriteString(date);
+    	  LCD_SetCursorSecondLine();
+    	  LCD_WriteString(time);
+    	 lcdUpdated = true;  // Set the flag to prevent future updates
+    	 LCD_mins_nSecs = 0;
+    	debounce_on_lift(DEBOUNCE_DELAY);
+      }
+	  if((display_mode==3)&&(!LCD_mins_nSecs)&&((lcdUpdated))){   	// date n time
+
+		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+
+	  char line2[10];
+	  sprintf(line2, "%02d/%02d", sTime.Minutes,sTime.Seconds);
 
 
+	  LCD_SetCursor(1, 8);     //set cursor to mins n secs place
+	  LCD_WriteString(line2);
+
+	  lcdUpdated = true;  // Set the flag to prevent future updates
+	  debounce_on_lift(DEBOUNCE_DELAY);
+
+	 }
+
+  }
 
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
   /* USER CODE END 3 */
-
+}
 
 /**
   * @brief System Clock Configuration
@@ -749,7 +869,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5|GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(RS_Pin_GPIO_Port, RS_Pin_Pin, GPIO_PIN_RESET);
@@ -764,8 +884,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PA5 PA6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6;
+  /*Configure GPIO pins : PA5 PA6 PA7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -787,9 +907,9 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB10 PB4 PB5 PB8
+  /*Configure GPIO pins : PB10 PB3 PB5 PB8
                            PB9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_4|GPIO_PIN_5|GPIO_PIN_8
+  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_3|GPIO_PIN_5|GPIO_PIN_8
                           |GPIO_PIN_9;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLUP;
@@ -802,13 +922,10 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI4_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI4_IRQn);
-
   HAL_NVIC_SetPriority(EXTI9_5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
 
-  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 1);
   HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
@@ -958,7 +1075,9 @@ bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 	PB8_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_8);
 	PB9_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_9);
 	PB10_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_10);
-	if((!PB8_high)|(!PB10_high)|(!PB9_high)){
+	PB5_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_5);
+	PB3_high = HAL_GPIO_ReadPin(GPIOB,GPIO_PIN_3);
+	if((!PB8_high)|(!PB10_high)|(!PB9_high)|(!PB3_high)|(!PB5_high)){
 		bounce_tick = HAL_GetTick();
 	}
 	if(HAL_GetTick() - bounce_tick > DEBOUNCE_DELAY){
@@ -975,44 +1094,60 @@ bool debounce_on_lift(uint16_t DEBOUNCE_DELAY){
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 // Read the current button state
-
+	  UNUSED(GPIO_Pin);
 	previousMillis = currentMillis;
 	currentMillis = HAL_GetTick();
 
-	if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
-		pulseCount++;
-		if((HAL_GetTick()-lastpulsetime)>= 50){
-			digiTemp = 256.000 * pulseCount / 4096.000 - 50;
-			lastpulsetime = HAL_GetTick();
-			pulseCount=0;
+	if((GPIO_Pin == GPIO_PIN_3)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb3  middle button
+			if((running==0)){
+				running=3;
+			}
+//			if((running==3)){             // middle press during time set
+//				middle=1;
+//			}
+			else{
+				running=0;
+			}
+			previousMillis = currentMillis;
 		}
+
+	if((GPIO_Pin == GPIO_PIN_5)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb5 right button
+		if((running==0)){
+			 tick = HAL_GetTick();
+			 duty_cycle = 0;
+			running=4;
+		}
+		else{
+			running=0;
+			calibration = 0;
+			send_temp=0;
+		}
+		previousMillis = currentMillis;
 	}
 
-	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // top button
-
+	if((GPIO_Pin == GPIO_PIN_8)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb8  top button
 		if((running==0)){
 			running=1;
 		}
-//		if((running==3)){           //  while in mode 3 inc
+//		if((running==3)){             // top press during time set
 //			top=1;
-//			}
+//		}
 		else{
 			running=0;
 		}
 		previousMillis = currentMillis;
 	}
 
-
-	if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // bottom button
-		if(running==0){
-			MPP = 0;                    // reset Max for next measurement
-			MppV = 0;                    // reset Max for next measurement
-			MppI = 0;                    // reset Max for next measurement
-			duty_cycle = 0;          // reset duty cycle to start from 0
-			tick_active_load = HAL_GetTick();
-			running=2;
+	else if((GPIO_Pin == GPIO_PIN_9)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb9 bottom button
+		if((running==0)){
+		  MPP = 0;                    // reset Max for next measurement
+		  MppV = 0;                    // reset Max for next measurement
+		  MppI = 0;                    // reset Max for next measurement
+		  duty_cycle = 0;
+		  idlelcdUpdated = 0;
+		  running=2;
 		}
-//		if((running==3)){              //  while in mode 3 dec
+//		if((running==3)){             // bottom press during time set
 //			bottom=1;
 //		}
 		else{
@@ -1021,7 +1156,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		previousMillis = currentMillis;
 	}
 
-	if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=5))&&(allow_press)){  // left button
+	else if(((GPIO_Pin == GPIO_PIN_10)&&((currentMillis - previousMillis)>=5))&&(allow_press)){  // pb10 left button
 
 		idlelcdUpdated = 0;
 		lcdUpdated = 0;
@@ -1034,16 +1169,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		previousMillis = currentMillis;
 	}
 
-//	if((GPIO_Pin == GPIO_PIN_4)&&((currentMillis - previousMillis)>=5)){  // middle button
-//
-//		if((running==0)){
-//			running=3;      //set datetime mode
-//		}
-//		if(running==3){
-//			middle = 1;
-//		}
-//		previousMillis = currentMillis;
-//	}
+	else if(GPIO_Pin == GPIO_PIN_12){                 //digital sensor
+		pulseCount++;
+		if((HAL_GetTick()-lastpulsetime)>= 50){
+			digiTemp = 256.000 * pulseCount / 4096.000 - 50;
+			lastpulsetime = HAL_GetTick();
+			pulseCount=0;
+		}
+	}
 
 
 }
@@ -1069,7 +1202,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive 
 		memset(rx_data, 0, sizeof(rx_data));
 			if(running==0){
 				running=2;
-				lcdUpdated = 0;
+				 idlelcdUpdated = 0;
 			}
 			else{
 				running=0;
