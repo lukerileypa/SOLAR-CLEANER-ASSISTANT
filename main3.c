@@ -163,6 +163,14 @@ int i = 0;
 
 int calibration = 0;
 int send_temp = 0;        // for calibration to send uart temp
+float PMPPcalibrated = 0;
+float B = -0.004;
+float PnormT = 0;
+float MPPnormalized = 0;
+float Lux_calibration = 0;
+float E = 0;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -336,7 +344,15 @@ LCD_Clear();
 		  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 		  tick_LED = HAL_GetTick();
 		  }
+
+	  PnormT = MPP/(1+B*(digiTemp-Temp));
+	  MPPnormalized = PnormT*Lux_calibration/Lux;
+
+	  E = MPPnormalized/PMPPcalibrated;
+
+
 	  debounce_on_lift(DEBOUNCE_DELAY);
+
   	  }
 
   	  if (running == 3) {                 // time set mode
@@ -445,6 +461,7 @@ LCD_Clear();
   			 calibration = 0;
   			 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, SET); // leave led on after sensing
   			 running=0;
+  			 PMPPcalibrated = MPP;
   		 }
 
   	  }
