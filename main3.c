@@ -278,6 +278,7 @@ LCD_Clear();
 	  EN_dataSent = 0;  // Clear the flag when running is not zero
 	  amblcdUpdated = 0;
 	  display_mode = 2;
+	  send_temp=0;
   }
 
 
@@ -427,7 +428,7 @@ LCD_Clear();
 
   	  if(running==4){
 
-  		 if((((HAL_GetTick()-tick_LED)>=200))) {            // led flash period
+  		 if(((HAL_GetTick()-tick_LED)>=200)) {            // led flash period
 			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
 			tick_LED = HAL_GetTick();
 			}
@@ -435,10 +436,9 @@ LCD_Clear();
   			calibration=1;
 			}
   		 if(((HAL_GetTick()-tick)>500)&&(EN_dataSent != 0)){         // set SP ,easurement
-  			send_temp = 1;
   			calibration = 2;
-  			send_temp = 0;
-  			 EN_dataSent = 0;
+  			send_temp=1;
+  			EN_dataSent = 0;
 
   		 }
   		 if ((HAL_GetTick()-tick)>=10000){
