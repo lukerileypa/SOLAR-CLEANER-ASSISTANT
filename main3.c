@@ -169,6 +169,9 @@ float PnormT = 0;
 float MPPnormalized = 0;
 float Lux_calibration = 0;
 float E = 0;
+int Eint = 0;
+
+int x =0; // for display mode 4
 
 
 /* USER CODE END PV */
@@ -292,7 +295,7 @@ LCD_Clear();
 
   if((running==2)||(calibration==2)){              // do the SP stuff
 
-	  if (((tick_active_load - HAL_GetTick())>=200)&&(duty_cycle<100)){
+	  if (((tick_active_load - HAL_GetTick())>=300)&&(duty_cycle<100)){
 				  duty_cycle++;                                              // increment duty cycle by 1 every 100ms but stop at 100%
 				  tick_active_load = HAL_GetTick();
 		  }
@@ -334,10 +337,9 @@ LCD_Clear();
 		  MppV = voltageAverage;
 		  }
 		  debounce_on_lift(DEBOUNCE_DELAY);
-		  SP_dataSent=1;
+
 		  tick_SP = HAL_GetTick();
-		  lcdUpdated = 0;
-		  display_mode=1;
+
 
 	  	  }
 	  if ((HAL_GetTick()-tick_LED)>100){                       // flash LED
@@ -346,10 +348,14 @@ LCD_Clear();
 		  }
 
 	  PnormT = MPP/(1+B*(digiTemp-Temp));
+
 	  MPPnormalized = PnormT*Lux_calibration/Lux;
+	  E = MPPnormalized*100/PMPPcalibrated;
+	  Eint = (int)E;
 
-	  E = MPPnormalized/PMPPcalibrated;
-
+	  SP_dataSent=1;     // send out the data
+	  lcdUpdated = 0;
+	  display_mode=1;
 
 	  debounce_on_lift(DEBOUNCE_DELAY);
 
@@ -450,6 +456,7 @@ LCD_Clear();
 			}
   		 if((HAL_GetTick()-tick)<500) {            // set amb ,measuerment
   			calibration=1;
+  			Lux_calibration = Lux;
 			}
   		 if(((HAL_GetTick()-tick)>500)&&(EN_dataSent != 0)){         // set SP ,easurement
   			calibration = 2;
@@ -462,13 +469,14 @@ LCD_Clear();
   			 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, SET); // leave led on after sensing
   			 running=0;
   			 PMPPcalibrated = MPP;
+  			 Eint =100;
   		 }
 
   	  }
 
-  if((SP_dataSent==1)&&(running==0)){     // send SP after sensing period
+  if(((SP_dataSent==1)&&(running==0))||(x==1)){     // send SP after sensing period
  	  char uart_buffer[30];
- 	  sprintf(uart_buffer, "&_%04d_%03d_%03d_000_*\r\n", MppV,MppI,MPP);
+ 	  sprintf(uart_buffer, "&_%04d_%03d_%03d_%03d_*\r\n", MppV,MppI,MPP,Eint);
  	  HAL_UART_Transmit(&huart2, (uint8_t*)uart_buffer, strlen(uart_buffer), HAL_MAX_DELAY);   // send out uart
  	  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, SET); // leave led on after sensing
  	  memset(rx_data, 0, sizeof(rx_data));
@@ -499,7 +507,7 @@ LCD_Clear();
 	  char line1[20];
 	  char line2[20];
 	  sprintf(line1, "V:%04dmV I:%03dmA ", MppV,MppI);    // power etc
-	  sprintf(line2, "P: %03dmW E:000 ", MPP);
+	  sprintf(line2, "P: %03dmW E:%03d ", MPP,Eint);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
@@ -509,7 +517,7 @@ LCD_Clear();
 
   }
 
-  if((display_mode==2)&&(!amblcdUpdated)){
+  if(((display_mode==2)&&(!amblcdUpdated))||(x==2)){
 	  char line1[20];
 	  char line2[20];
 	  sprintf(line1, "AMB:%03dC SP:%03dC", intTempADC,intdigiTemp);     // Temp etc
@@ -522,7 +530,7 @@ LCD_Clear();
 	  debounce_on_lift(DEBOUNCE_DELAY);
   }
 
-      if((display_mode==3)&&(!lcdUpdated)){   	// date n time
+      if(((display_mode==3)&&(!lcdUpdated))||(x==3)){   	// date n time
 
   		HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
   		HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
@@ -557,6 +565,23 @@ LCD_Clear();
 
 	 }
 
+  }
+
+  if((display_mode==4)){
+
+	  if((HAL_GetTick()-tick)>2000) {            // set amb ,measuerment
+	   			x=1;
+	 			}
+	   		 if(((HAL_GetTick()-tick)>4000)&&(EN_dataSent != 0)){         // set SP ,easurement
+	   			x=2;
+	   		 }
+	   		 if ((HAL_GetTick()-tick)>=6000){
+	   			 x=3;
+	   			 tick = HAL_GetTick();
+	   		 }
+
+	  amblcdUpdated = true;  // Set the flag to prevent future updates
+	  debounce_on_lift(DEBOUNCE_DELAY);
   }
 
     /* USER CODE END WHILE */
@@ -1131,8 +1156,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 	if((GPIO_Pin == GPIO_PIN_5)&&((currentMillis - previousMillis)>=5)&&(allow_press)){  // pb5 right button
 		if((running==0)){
 			 tick = HAL_GetTick();
+			 MPP = 0;                    // reset Max for next measurement
+			  MppV = 0;                    // reset Max for next measurement
+			  MppI = 0;                    // reset Max for next measurement
 			 duty_cycle = 0;
-			running=4;
+			 running=4;
 		}
 		else{
 			running=0;
@@ -1178,9 +1206,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		idlelcdUpdated = 0;
 		lcdUpdated = 0;
 		amblcdUpdated = 0;
+		tick = HAL_GetTick();
 		display_mode++;
 
-		if((display_mode==4)){    // adjust to 5 when extra modes added
+		if((display_mode==5)){    // adjust to 5 when extra modes added
 			display_mode=1;
 		}
 		previousMillis = currentMillis;
@@ -1218,11 +1247,30 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive 
 	if (strcmp(rx_data,"&_SP_*\n") == 0){        //&_EN_*
 		memset(rx_data, 0, sizeof(rx_data));
 			if(running==0){
-				running=2;
-				 idlelcdUpdated = 0;
+				  MPP = 0;                    // reset Max for next measurement
+				  MppV = 0;                    // reset Max for next measurement
+				  MppI = 0;                    // reset Max for next measurement
+				  running=2;
+				  idlelcdUpdated = 0;
 			}
 			else{
 				running=0;
+			}
+	}
+	if (strcmp(rx_data,"&_CA_*\n") == 0){        //&_EN_*
+		memset(rx_data, 0, sizeof(rx_data));
+			if(running==0){
+				 MPP = 0;                    // reset Max for next measurement
+				  MppV = 0;                    // reset Max for next measurement
+				  MppI = 0;                    // reset Max for next measurement
+				 tick = HAL_GetTick();
+				 duty_cycle = 0;
+				 running=4;
+			}
+			else{
+				running=0;
+				calibration = 0;
+				send_temp=0;
 			}
 	}
 
