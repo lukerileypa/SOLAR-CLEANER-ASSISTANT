@@ -286,9 +286,10 @@ int main(void)
 	  if (((tick_active_load - HAL_GetTick())>=600)&&(duty_cycle<200)){
 			  duty_cycle++;                                              // increment duty cycle by 1 every 100ms but stop at 100%
 			  tick_active_load = HAL_GetTick();
+			  TIM1->CCR4 = duty_cycle;
+			  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
 		  }
-		  TIM1->CCR4 = duty_cycle;
-		  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_4);
+
 
 	  if ((HAL_GetTick()-tick_SP)>40){                                               // sp measure interval
 		  HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adcResultsDMA,4);                       //HAL_ADC_Start_DMA(hadc, pData, Length)
@@ -439,7 +440,7 @@ int main(void)
   	  }
 
   	  if(running==4){
-
+  		  allow_press =0;
   		 if(((HAL_GetTick()-tick_calibration)>=200)) {            // led flash period
 			HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_7);
 			tick_calibration = HAL_GetTick();
@@ -453,7 +454,8 @@ int main(void)
   			send_temp=1;
   			EN_dataSent = 0;
   		 }
-  		 if ((HAL_GetTick()-tick)>=10000){
+  		allow_press =0;
+  		 if ((HAL_GetTick()-tick)>=9700){
   			 calibration = 0;
   			 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, SET); // leave led on after sensing
   			 running=0;
@@ -499,7 +501,7 @@ int main(void)
 	  char line1[20];
 	  char line2[20];
 	  sprintf(line1, "V:%04dmV I:%03dmA ", MppV,MppI);    // power etc
-	  sprintf(line2, "P: %03dmW E:%03d ", MPP,Eint);
+	  sprintf(line2, "P: %03dmW E:%03d%% ", MPP,Eint);
 	  LCD_Clear();
 	  LCD_WriteString(line1);
 	  LCD_SetCursorSecondLine();
@@ -570,8 +572,8 @@ int main(void)
 		HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
 		tick_E = HAL_GetTick();
 		}
-  if(Eint>=80){                                          // efecciency good
- 	 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, RESET);
+  if(Eint>=80){                                          // effecciency good
+ 	 HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
    }
   }
 
@@ -751,7 +753,7 @@ static void MX_RTC_Init(void)
   /** Initialize RTC and set the Time and Date
   */
   sTime.Hours = 0x16;
-  sTime.Minutes = 0x0;
+  sTime.Minutes = 0x20;
   sTime.Seconds = 0x0;
   sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   sTime.StoreOperation = RTC_STOREOPERATION_RESET;
@@ -760,8 +762,8 @@ static void MX_RTC_Init(void)
     Error_Handler();
   }
   sDate.WeekDay = RTC_WEEKDAY_THURSDAY;
-  sDate.Month = RTC_MONTH_MAY;
-  sDate.Date = 0x16;
+  sDate.Month = RTC_MONTH_SEPTEMBER;
+  sDate.Date = 0x19;
   sDate.Year = 0x24;
 
   if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
@@ -1185,6 +1187,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 		  duty_cycle = 0;
 		  new_EValue=0;
 		  Eint=0;
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
 		  idlelcdUpdated = 0;
 		  running=2;
 
@@ -1243,20 +1246,24 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){        // uart receive 
 		}
 
 
-	if (strcmp(rx_data,"&_SP_*\n") == 0){        //&_EN_*
+	if (strcmp(rx_data,"&_SP_*\n") == 0){        //&_sp_*
 		memset(rx_data, 0, sizeof(rx_data));
 			if(running==0){
 				  MPP = 0;                    // reset Max for next measurement
 				  MppV = 0;                    // reset Max for next measurement
 				  MppI = 0;                    // reset Max for next measurement
-				  running=2;
+				  duty_cycle = 0;
+				  new_EValue=0;
+				  Eint=0;
+				  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
 				  idlelcdUpdated = 0;
+				  running=2;
 			}
 			else{
 				running=0;
 			}
 	}
-	if (strcmp(rx_data,"&_CA_*\n") == 0){        //&_EN_*
+	if (strcmp(rx_data,"&_CA_*\n") == 0){        //&_CA_*
 		memset(rx_data, 0, sizeof(rx_data));
 			if(running==0){
 				 MPP = 0;                    // reset Max for next measurement
